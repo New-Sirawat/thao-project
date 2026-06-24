@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, Image, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { PlayCircle, CheckCircle } from 'lucide-react-native';
+import { StyleSheet, Text, View, FlatList, Image, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { PlayCircle, CheckCircle, Upload, FileText } from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { theme } from '../theme';
+import { AuthContext } from '../../App';
 
 interface TrainingProgram {
   id: string;
@@ -11,9 +13,12 @@ interface TrainingProgram {
   image_url: string;
 }
 
+import { useNavigation } from '@react-navigation/native';
 export default function TrainingScreen() {
+  const navigation = useNavigation();
   const [programs, setPrograms] = useState<TrainingProgram[]>([]);
   const [loading, setLoading] = useState(true);
+  const { role } = React.useContext(AuthContext);
 
   useEffect(() => {
     fetchTrainingPrograms();
@@ -21,7 +26,7 @@ export default function TrainingScreen() {
 
   const fetchTrainingPrograms = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/training');
+      const response = await fetch('http://192.168.2.28:3000/api/training');
       const result = await response.json();
       if (response.ok && result.data) {
         setPrograms(result.data);
@@ -31,6 +36,10 @@ export default function TrainingScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateProgram = () => {
+    navigation.navigate('CreateTraining' as never);
   };
 
   const renderProgressBar = (progress: number) => {
@@ -59,6 +68,17 @@ export default function TrainingScreen() {
         <Text style={styles.headerTitle}>Training Programs</Text>
       </View>
 
+      {/* Mentor Action: Upload Plan */}
+      {role === 'Mentor' && (
+        <View style={styles.mentorActionContainer}>
+          <Text style={styles.mentorLabel}>Mentor Actions</Text>
+          <TouchableOpacity style={styles.uploadButton} onPress={handleCreateProgram}>
+            <Upload color={theme.colors.surface} size={20} />
+            <Text style={styles.uploadButtonText}>Create Training Program</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={programs}
         keyExtractor={(item) => item.id}
@@ -83,6 +103,7 @@ export default function TrainingScreen() {
 
               <TouchableOpacity 
                 style={[styles.actionButton, item.progress === 100 && styles.actionButtonCompleted]}
+                onPress={() => navigation.navigate('CourseDetail' as never, { course: item } as never)}
               >
                 {item.progress === 100 ? (
                   <>
@@ -129,6 +150,32 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 20,
+    paddingTop: 0,
+  },
+  mentorActionContainer: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  mentorLabel: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 16,
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  uploadButton: {
+    backgroundColor: theme.colors.primary, // Changed from secondary for better contrast
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: theme.borderRadius.md,
+    ...theme.shadows.subtle,
+  },
+  uploadButtonText: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 14,
+    color: theme.colors.surface,
+    marginLeft: 8,
   },
   card: {
     backgroundColor: theme.colors.surface,

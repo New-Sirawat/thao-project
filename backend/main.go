@@ -9,8 +9,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/supabase-community/supabase-go"
+	"encoding/json"
+	"io/ioutil"
+	"path/filepath"
 )
 
 type CheckInRequest struct {
@@ -58,11 +62,18 @@ func main() {
 		log.Println("No .env file found, relying on environment variables")
 	}
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		BodyLimit: 100 * 1024 * 1024, // Allow up to 100MB for video uploads
+	})
 
 	// Middleware
 	app.Use(logger.New())
 	app.Use(cors.New())
+
+	// Ensure uploads directory exists
+	os.MkdirAll("./uploads", os.ModePerm)
+	// Serve static files from uploads directory
+	app.Static("/uploads", "./uploads")
 
 	// Initialize Supabase client
 	supabaseUrl := os.Getenv("SUPABASE_URL")
@@ -216,12 +227,17 @@ func main() {
 	// Get leave requests history
 	app.Get("/api/leaves", func(c *fiber.Ctx) error {
 		userId := c.Query("user_id")
-		if userId == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Missing user_id"})
-		}
-
+		
 		var records []map[string]interface{}
-		_, err := client.From("leave_requests").Select("*", "exact", false).Eq("user_id", userId).ExecuteTo(&records)
+		var err error
+		
+		if userId == "" {
+			// Fetch all leave requests (for Mentor)
+			_, err = client.From("leave_requests").Select("*", "exact", false).ExecuteTo(&records)
+		} else {
+			// Fetch leave requests for specific user
+			_, err = client.From("leave_requests").Select("*", "exact", false).Eq("user_id", userId).ExecuteTo(&records)
+		}
 		
 		if err != nil {
 			log.Printf("Error fetching leave requests: %v", err)
@@ -231,43 +247,339 @@ func main() {
 		return c.JSON(fiber.Map{"status": "success", "data": records})
 	})
 
+	// Update leave request status (Approve/Reject)
+	app.Put("/api/leaves/:id", func(c *fiber.Ctx) error {
+		id := c.Params("id")
+		
+		var payload struct {
+			Status string `json:"status"`
+		}
+		
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		updateRecord := map[string]interface{}{
+			"status": payload.Status,
+		}
+
+		_, _, err := client.From("leave_requests").Update(updateRecord, "", "").Eq("id", id).Execute()
+		if err != nil {
+			log.Printf("Error updating leave request: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update leave request"})
+		}
+
+		return c.JSON(fiber.Map{"status": "success", "message": "Leave request updated"})
+	})
+
 	// Get training programs
 	app.Get("/api/training", func(c *fiber.Ctx) error {
-		// Mock data for MVP if table doesn't exist or is empty
-		mockPrograms := []map[string]interface{}{
-			{
-				"id": "1",
-				"title": "React Native Masterclass",
-				"description": "Learn to build mobile apps",
-				"progress": 75,
-				"image_url": "https://reactnative.dev/img/logo-og.png",
-			},
-			{
-				"id": "2",
-				"title": "Go Fiber Backend API",
-				"description": "High performance APIs",
-				"progress": 100,
-				"image_url": "https://gofiber.io/assets/images/logo.svg",
-			},
-			{
-				"id": "3",
-				"title": "UI/UX Design Systems",
-				"description": "Build beautiful interfaces",
-				"progress": 30,
-				"image_url": "https://cdn.dribbble.com/users/121337/screenshots/10660602/media/078d49a039ff030c69d80d24eab537de.png",
-			},
-		}
-
-		// Try fetching from Supabase table `training_programs`
-		var records []map[string]interface{}
-		_, err := client.From("training_programs").Select("*", "exact", false).ExecuteTo(&records)
+		var programs []map[string]interface{}
 		
-		if err != nil || len(records) == 0 {
-			// Fallback to mock data if table doesn't exist
-			return c.JSON(fiber.Map{"status": "success", "data": mockPrograms})
+		// Read from local JSON DB
+		data, err := ioutil.ReadFile("training_db.json")
+		if err == nil {
+			json.Unmarshal(data, &programs)
+		} else {
+			// Initialize with mock data if file doesn't exist
+			programs = []map[string]interface{}{
+				{
+					"id": "1",
+					"title": "React Native Masterclass",
+					"description": "Learn to build mobile apps",
+					"progress": 75,
+					"image_url": "https://reactnative.dev/img/logo-og.png",
+					"syllabus": []map[string]interface{}{
+						{"id": "1", "title": "Introduction to React Native", "completed": true},
+						{"id": "2", "title": "Navigation & Routing", "completed": true},
+						{"id": "3", "title": "State Management", "completed": false},
+					},
+				},
+			}
+			fileData, _ := json.MarshalIndent(programs, "", "  ")
+			ioutil.WriteFile("training_db.json", fileData, 0644)
 		}
 
-		return c.JSON(fiber.Map{"status": "success", "data": records})
+		return c.JSON(fiber.Map{"status": "success", "data": programs})
+	})
+
+	// Create training program
+	app.Post("/api/training", func(c *fiber.Ctx) error {
+		title := c.FormValue("title")
+		description := c.FormValue("description")
+		
+		if title == "" || description == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "Title and description are required"})
+		}
+
+		program := map[string]interface{}{
+			"id":          uuid.New().String(),
+			"title":       title,
+			"description": description,
+			"progress":    0,
+			"image_url":   "",
+			"pdf_url":     "",
+			"video_url":   "",
+		}
+
+		baseURL := "http://192.168.2.28:3000/uploads/"
+
+		// Handle Cover Image
+		if file, err := c.FormFile("coverImage"); err == nil {
+			filename := uuid.New().String() + filepath.Ext(file.Filename)
+			c.SaveFile(file, fmt.Sprintf("./uploads/%s", filename))
+			program["image_url"] = baseURL + filename
+		} else {
+			program["image_url"] = "https://reactnative.dev/img/logo-og.png" // default
+		}
+
+		// Handle PDF
+		if file, err := c.FormFile("pdfFile"); err == nil {
+			filename := uuid.New().String() + filepath.Ext(file.Filename)
+			c.SaveFile(file, fmt.Sprintf("./uploads/%s", filename))
+			program["pdf_url"] = baseURL + filename
+		}
+
+		// Handle Video
+		if file, err := c.FormFile("videoFile"); err == nil {
+			filename := uuid.New().String() + filepath.Ext(file.Filename)
+			c.SaveFile(file, fmt.Sprintf("./uploads/%s", filename))
+			program["video_url"] = baseURL + filename
+		}
+
+		// Save to JSON DB
+		var programs []map[string]interface{}
+		data, err := ioutil.ReadFile("training_db.json")
+		if err == nil {
+			json.Unmarshal(data, &programs)
+		}
+		
+		programs = append([]map[string]interface{}{program}, programs...) // Add to beginning
+		
+		fileData, _ := json.MarshalIndent(programs, "", "  ")
+		ioutil.WriteFile("training_db.json", fileData, 0644)
+
+		return c.JSON(fiber.Map{"status": "success", "data": program})
+	})
+
+	// Get schedules
+	app.Get("/api/schedules", func(c *fiber.Ctx) error {
+		var schedules []map[string]interface{}
+		data, err := ioutil.ReadFile("schedule_db.json")
+		if err == nil {
+			json.Unmarshal(data, &schedules)
+		} else {
+			// Mock default
+			schedules = []map[string]interface{}{
+				{
+					"id": "1",
+					"title": "React Native Workshop",
+					"time": "10:00 AM - 11:30 AM",
+					"location": "Room 302",
+					"type": "workshop",
+				},
+				{
+					"id": "2",
+					"title": "Project Demo Prep",
+					"time": "3:00 PM - 4:00 PM",
+					"location": "Google Meet",
+					"type": "meeting",
+				},
+			}
+			fileData, _ := json.MarshalIndent(schedules, "", "  ")
+			ioutil.WriteFile("schedule_db.json", fileData, 0644)
+		}
+		return c.JSON(fiber.Map{"status": "success", "data": schedules})
+	})
+
+	// Create schedule
+	app.Post("/api/schedules", func(c *fiber.Ctx) error {
+		var body struct {
+			Title    string `json:"title"`
+			Time     string `json:"time"`
+			Location string `json:"location"`
+			Type     string `json:"type"`
+		}
+		
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		if body.Title == "" || body.Time == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "Title and time are required"})
+		}
+
+		schedule := map[string]interface{}{
+			"id":       uuid.New().String(),
+			"title":    body.Title,
+			"time":     body.Time,
+			"location": body.Location,
+			"type":     body.Type,
+		}
+
+		var schedules []map[string]interface{}
+		data, err := ioutil.ReadFile("schedule_db.json")
+		if err == nil {
+			json.Unmarshal(data, &schedules)
+		}
+		
+		schedules = append([]map[string]interface{}{schedule}, schedules...) // Add to beginning
+		fileData, _ := json.MarshalIndent(schedules, "", "  ")
+		ioutil.WriteFile("schedule_db.json", fileData, 0644)
+
+		// Create Alert for the new schedule
+		var alerts []map[string]interface{}
+		alertData, err := ioutil.ReadFile("alerts_db.json")
+		if err == nil {
+			json.Unmarshal(alertData, &alerts)
+		}
+
+		alert := map[string]interface{}{
+			"id":    uuid.New().String(),
+			"title": fmt.Sprintf("New Schedule: %s", body.Title),
+			"time":  "Just now",
+			"type":  "info", // info, warning, success
+		}
+		alerts = append([]map[string]interface{}{alert}, alerts...)
+		alertFileData, _ := json.MarshalIndent(alerts, "", "  ")
+		ioutil.WriteFile("alerts_db.json", alertFileData, 0644)
+
+		return c.JSON(fiber.Map{"status": "success", "data": schedule})
+	})
+
+	// Get alerts (used for Recent Activity)
+	app.Get("/api/alerts", func(c *fiber.Ctx) error {
+		var alerts []map[string]interface{}
+		data, err := ioutil.ReadFile("alerts_db.json")
+		if err == nil {
+			json.Unmarshal(data, &alerts)
+		}
+		return c.JSON(fiber.Map{"status": "success", "data": alerts})
+	})
+
+	// Get notifications
+	app.Get("/api/notifications", func(c *fiber.Ctx) error {
+		var notifications []map[string]interface{}
+		data, err := ioutil.ReadFile("notifications_db.json")
+		if err == nil {
+			json.Unmarshal(data, &notifications)
+		} else {
+			notifications = []map[string]interface{}{
+				{
+					"id": "1",
+					"title": "Welcome to Devplus",
+					"message": "Please complete your onboarding profile.",
+					"time": "2 hours ago",
+					"isRead": false,
+				},
+				{
+					"id": "2",
+					"title": "Leave Request Approved",
+					"message": "Your leave request for tomorrow has been approved.",
+					"time": "5 hours ago",
+					"isRead": true,
+				},
+			}
+			fileData, _ := json.MarshalIndent(notifications, "", "  ")
+			ioutil.WriteFile("notifications_db.json", fileData, 0644)
+		}
+		return c.JSON(fiber.Map{"status": "success", "data": notifications})
+	})
+
+	// Get announcements
+	app.Get("/api/announcements", func(c *fiber.Ctx) error {
+		var announcements []map[string]interface{}
+		data, err := ioutil.ReadFile("announcements_db.json")
+		if err == nil {
+			json.Unmarshal(data, &announcements)
+		} else {
+			announcements = []map[string]interface{}{
+				{
+					"id": "1",
+					"title": "Townhall Meeting this Friday",
+					"content": "Don't forget to join our monthly townhall meeting at 3 PM in the main hall.",
+					"date": "24 Jun 2026",
+					"author": "HR Department",
+					"isNew": true,
+				},
+				{
+					"id": "2",
+					"title": "New React Native Course Available",
+					"content": "Check out the Training tab for the new advanced React Native masterclass.",
+					"date": "22 Jun 2026",
+					"author": "Training Team",
+					"isNew": false,
+				},
+			}
+			fileData, _ := json.MarshalIndent(announcements, "", "  ")
+			ioutil.WriteFile("announcements_db.json", fileData, 0644)
+		}
+		return c.JSON(fiber.Map{"status": "success", "data": announcements})
+	})
+
+	// Get mentor's students
+	app.Get("/api/students", func(c *fiber.Ctx) error {
+		var students []map[string]interface{}
+		data, err := ioutil.ReadFile("students_db.json")
+		if err == nil {
+			json.Unmarshal(data, &students)
+		} else {
+			students = []map[string]interface{}{
+				{
+					"id": "1",
+					"name": "Nguyen Van A",
+					"role": "Frontend Intern",
+					"phone": "098-123-4567",
+					"email": "nguyenvana@devplus.edu.vn",
+					"isCheckedIn": true,
+				},
+				{
+					"id": "2",
+					"name": "Tran Thi B",
+					"role": "Backend Intern",
+					"phone": "091-234-5678",
+					"email": "tranthib@devplus.edu.vn",
+					"isCheckedIn": true,
+				},
+				{
+					"id": "3",
+					"name": "Le Van C",
+					"role": "UI/UX Intern",
+					"phone": "090-345-6789",
+					"email": "levanc@devplus.edu.vn",
+					"isCheckedIn": false,
+				},
+				{
+					"id": "4",
+					"name": "Pham D",
+					"role": "Mobile Intern",
+					"phone": "093-456-7890",
+					"email": "phamd@devplus.edu.vn",
+					"isCheckedIn": false,
+				},
+			}
+			fileData, _ := json.MarshalIndent(students, "", "  ")
+			ioutil.WriteFile("students_db.json", fileData, 0644)
+		}
+
+		// Calculate stats
+		total := len(students)
+		checkedIn := 0
+		for _, s := range students {
+			if s["isCheckedIn"] == true {
+				checkedIn++
+			}
+		}
+
+		return c.JSON(fiber.Map{
+			"status": "success", 
+			"data": students,
+			"stats": map[string]interface{}{
+				"total": total,
+				"checkedIn": checkedIn,
+				"absent": total - checkedIn,
+			},
+		})
 	})
 
 	// Background Cron Job for Auto-Checkout

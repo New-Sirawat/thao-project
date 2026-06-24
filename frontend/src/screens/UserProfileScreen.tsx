@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, Modal, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { LogOut, User, Mail, Briefcase, MapPin } from 'lucide-react-native';
+import { LogOut, User, Mail, Briefcase, MapPin, Edit3, X, Save } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 import { theme } from '../theme';
+import { AuthContext } from '../../App';
 
 export default function UserProfileScreen() {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('Frontend Developer Intern'); // Default role
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editPhone, setEditPhone] = useState('098-765-4321');
+  const [editLocation, setEditLocation] = useState('Đà Nẵng Campus');
+  const { setSession, role, setRole } = useContext(AuthContext);
   
   useEffect(() => {
     fetchProfile();
@@ -18,8 +22,13 @@ export default function UserProfileScreen() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       setEmail(session.user.email || '');
-      // In a real app, you would fetch name/role from the 'users' table using session.user.id
     }
+  };
+
+  const handleSaveProfile = () => {
+    // In a real app, send update to backend
+    setIsEditModalVisible(false);
+    Alert.alert('Success', 'Profile updated successfully!');
   };
 
   const handleLogout = async () => {
@@ -34,9 +43,11 @@ export default function UserProfileScreen() {
           onPress: async () => {
             const { error } = await supabase.auth.signOut();
             if (error) {
-              Alert.alert('Error', error.message);
+              // Force offline logout fallback
+              Alert.alert('Offline Mode', 'คุณออกจากระบบแบบออฟไลน์แล้ว (You logged out offline)');
             }
-            // Supabase auth state listener in App.tsx will auto-redirect to Login
+            // Forcefully clear session state in App.tsx to unmount MainTabs and show LoginScreen
+            setSession(null);
           }
         }
       ]
@@ -48,6 +59,9 @@ export default function UserProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity style={styles.editIconButton} onPress={() => setIsEditModalVisible(true)}>
+          <Edit3 color={theme.colors.surface} size={20} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
@@ -57,9 +71,8 @@ export default function UserProfileScreen() {
             <User color={theme.colors.surface} size={40} />
           </View>
           <Text style={styles.nameText}>Intern Student</Text>
-          <Text style={styles.roleText}>{name}</Text>
+          <Text style={styles.roleText}>Frontend Developer Intern</Text>
         </View>
-
         {/* Info Cards */}
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
@@ -77,8 +90,20 @@ export default function UserProfileScreen() {
               <Briefcase color={theme.colors.primary} size={20} />
             </View>
             <View style={styles.infoTextContainer}>
-              <Text style={styles.infoLabel}>Department</Text>
-              <Text style={styles.infoValue}>Software Engineering</Text>
+              <Text style={styles.infoLabel}>Role (Tap to Switch)</Text>
+              <TouchableOpacity onPress={() => setRole(role === 'Student' ? 'Mentor' : 'Student')} style={styles.roleToggle}>
+                <Text style={styles.roleToggleText}>Current: {role} 🔄</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.infoRow}>
+            <View style={styles.iconWrapper}>
+              <User color={theme.colors.primary} size={20} />
+            </View>
+            <View style={styles.infoTextContainer}>
+              <Text style={styles.infoLabel}>Phone</Text>
+              <Text style={styles.infoValue}>{editPhone}</Text>
             </View>
           </View>
           <View style={styles.divider} />
@@ -88,7 +113,7 @@ export default function UserProfileScreen() {
             </View>
             <View style={styles.infoTextContainer}>
               <Text style={styles.infoLabel}>Office Location</Text>
-              <Text style={styles.infoValue}>Đà Nẵng Campus</Text>
+              <Text style={styles.infoValue}>{editLocation}</Text>
             </View>
           </View>
         </View>
@@ -98,6 +123,41 @@ export default function UserProfileScreen() {
           <LogOut color={theme.colors.destructiveText} size={20} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
+
+        {/* Edit Profile Modal */}
+        <Modal visible={isEditModalVisible} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+                  <X color={theme.colors.textSecondary} size={24} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <TextInput 
+                style={styles.inputField}
+                value={editPhone}
+                onChangeText={setEditPhone}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.inputLabel}>Office Location</Text>
+              <TextInput 
+                style={styles.inputField}
+                value={editLocation}
+                onChangeText={setEditLocation}
+              />
+
+              <TouchableOpacity style={styles.saveButton} onPress={handleSaveProfile}>
+                <Save color={theme.colors.surface} size={20} />
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </View>
   );
@@ -175,15 +235,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoLabel: {
-    fontFamily: theme.typography.fontFamily,
-    fontSize: 12,
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 14,
     color: theme.colors.textSecondary,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   infoValue: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 15,
+    fontFamily: theme.typography.fontFamily,
+    fontSize: 16,
     color: theme.colors.text,
+  },
+  roleToggle: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.sm,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  roleToggleText: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 14,
+    color: theme.colors.surface,
   },
   divider: {
     height: 1,
@@ -205,5 +278,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.destructiveText,
     marginLeft: 10,
+  },
+  editIconButton: {
+    position: 'absolute',
+    right: 20,
+    top: 60,
+    padding: 5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: 20,
+    width: '90%',
+    ...theme.shadows.medium,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 18,
+    color: theme.colors.text,
+  },
+  inputLabel: {
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginBottom: 5,
+  },
+  inputField: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: 15,
+    height: 50,
+    marginBottom: 15,
+    fontFamily: theme.typography.fontFamily,
+    color: theme.colors.text,
+  },
+  saveButton: {
+    backgroundColor: theme.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: theme.borderRadius.md,
+    marginTop: 10,
+  },
+  saveButtonText: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 16,
+    color: theme.colors.surface,
+    marginLeft: 8,
   },
 });

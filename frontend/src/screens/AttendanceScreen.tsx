@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { MapPin, Clock, FileText } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
+import { AuthContext } from '../../App';
 
 export default function AttendanceScreen() {
   const navigation = useNavigation();
+  const { role } = useContext(AuthContext);
   const [timeStr, setTimeStr] = useState('');
   const [locationStatus, setLocationStatus] = useState('Checking GPS...');
   const [locationColor, setLocationColor] = useState(theme.colors.warning);
@@ -43,7 +45,7 @@ export default function AttendanceScreen() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         
-        const response = await fetch(`http://localhost:3000/api/attendance/today?user_id=${session.user.id}`);
+        const response = await fetch(`http://192.168.2.28:3000/api/attendance/today?user_id=${session.user.id}`);
         const result = await response.json();
         
         if (response.ok && result.data) {
@@ -79,7 +81,7 @@ export default function AttendanceScreen() {
     if (isCheckedIn) {
       // Check-out API
       try {
-        const response = await fetch('http://localhost:3000/api/attendance/checkout', {
+        const response = await fetch('http://192.168.2.28:3000/api/attendance/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: session.user.id }),
@@ -108,7 +110,7 @@ export default function AttendanceScreen() {
 
       // NOTE: If testing on Android Emulator, change localhost to 10.0.2.2
       // If testing on a physical device, change to your PC's local IP address (e.g., 192.168.1.x)
-      const response = await fetch('http://localhost:3000/api/attendance/checkin', {
+      const response = await fetch('http://192.168.2.28:3000/api/attendance/checkin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -210,6 +212,18 @@ export default function AttendanceScreen() {
             <Text style={styles.leaveButtonText}>Leave Status</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Mentor Action: Leave Approvals */}
+        {role === 'Mentor' && (
+          <View style={styles.mentorActionContainer}>
+            <Text style={styles.mentorLabel}>Mentor Actions</Text>
+            <TouchableOpacity style={styles.approveButton} onPress={() => navigation.navigate('LeaveApprovals' as never)}>
+              <FileText color={theme.colors.surface} size={20} />
+              <Text style={styles.approveButtonText}>Manage Leave Approvals</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
       </ScrollView>
     </View>
   );
@@ -360,6 +374,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text,
     marginTop: 8,
+  },
+  mentorActionContainer: {
+    marginTop: 25,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  mentorLabel: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 16,
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  approveButton: {
+    backgroundColor: theme.colors.primary, // Changed from secondary for better contrast
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: theme.borderRadius.md,
+    ...theme.shadows.subtle,
+  },
+  approveButtonText: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 14,
+    color: theme.colors.surface,
+    marginLeft: 8,
   },
   resultBox: {
     marginTop: 20,

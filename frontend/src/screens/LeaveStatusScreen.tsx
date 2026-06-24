@@ -28,7 +28,7 @@ export default function LeaveStatusScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://localhost:3000/api/leaves?user_id=${session.user.id}`);
+      const response = await fetch(`http://192.168.2.28:3000/api/leaves?user_id=${session.user.id}`);
       const result = await response.json();
 
       if (response.ok && result.data) {

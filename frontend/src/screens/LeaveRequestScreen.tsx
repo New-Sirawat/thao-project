@@ -12,7 +12,11 @@ export default function LeaveRequestScreen() {
   const [isMultiDay, setIsMultiDay] = useState(false);
   
   // Format for react-native-calendars: YYYY-MM-DD
-  const getToday = () => new Date().toISOString().split('T')[0];
+  const getToday = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  };
   
   const [startDate, setStartDate] = useState(getToday());
   const [endDate, setEndDate] = useState(getToday());
@@ -54,7 +58,7 @@ export default function LeaveRequestScreen() {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/api/leaves', {
+      const response = await fetch('http://192.168.2.28:3000/api/leaves', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
