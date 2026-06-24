@@ -13,6 +13,9 @@ import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import TrainingScreen from './src/screens/TrainingScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
+import AttendanceHistoryScreen from './src/screens/AttendanceHistoryScreen';
+import LeaveRequestScreen from './src/screens/LeaveRequestScreen';
+import LeaveStatusScreen from './src/screens/LeaveStatusScreen';
 import UserProfileScreen from './src/screens/UserProfileScreen';
 
 const Stack = createNativeStackNavigator();
@@ -88,7 +91,12 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session && session.user ? (
-          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <>
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="AttendanceHistory" component={AttendanceHistoryScreen} />
+            <Stack.Screen name="LeaveRequest" component={LeaveRequestScreen} />
+            <Stack.Screen name="LeaveStatus" component={LeaveStatusScreen} />
+          </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}

@@ -1,14 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ActivityIndicator, ScrollView, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { theme } from '../theme';
-import { Bell, Clock, Calendar, ChevronRight } from 'lucide-react-native';
+import { Bell, Clock, Calendar, ChevronRight, FileText } from 'lucide-react-native';
 
 export default function HomeScreen() {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState<boolean>(true);
   const [timeStr, setTimeStr] = useState<string>('');
+  const [hasLeaveHistory, setHasLeaveHistory] = useState<boolean>(false);
 
   useEffect(() => {
+    // Check if user has leave history
+    const checkLeaveHistory = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const response = await fetch(`http://localhost:3000/api/leaves?user_id=${session.user.id}`);
+          const result = await response.json();
+          if (response.ok && result.data && result.data.length > 0) {
+            setHasLeaveHistory(true);
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    
+    checkLeaveHistory();
+    
     // Simulate loading data
     setTimeout(() => setLoading(false), 500);
 
@@ -58,6 +79,25 @@ export default function HomeScreen() {
           <View style={styles.statusBadge}>
             <Text style={styles.statusBadgeText}>Checked In</Text>
           </View>
+        </View>
+
+        {/* Quick Actions */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Attendance' as never)}>
+            <View style={styles.actionIcon}>
+              <Clock color={theme.colors.primary} size={24} />
+            </View>
+            <Text style={styles.actionText}>Attendance</Text>
+          </TouchableOpacity>
+          {hasLeaveHistory && (
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('LeaveStatus' as never)}>
+              <View style={styles.actionIcon}>
+                <FileText color={theme.colors.primary} size={24} />
+              </View>
+              <Text style={styles.actionText}>Leave Status</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Announcements Card */}
@@ -209,6 +249,32 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamilySemiBold,
     color: theme.colors.success,
     fontSize: 14,
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    marginHorizontal: -5,
+  },
+  actionButton: {
+    backgroundColor: theme.colors.surface,
+    flex: 1,
+    padding: 15,
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    ...theme.shadows.subtle,
+  },
+  actionIcon: {
+    backgroundColor: 'rgba(255, 140, 0, 0.1)',
+    padding: 15,
+    borderRadius: 50,
+    marginBottom: 10,
+  },
+  actionText: {
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 14,
+    color: theme.colors.text,
   },
   announcementItem: {
     flexDirection: 'row',
