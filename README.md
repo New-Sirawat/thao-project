@@ -48,6 +48,19 @@ A full-stack web application built with **React Native Web (Expo)** for the fron
 
 ---
 
+## 🔑 Demo Accounts & Quick 1-Click Login
+
+On the Web Login page, you can either **click the 1-Click Demo buttons** at the bottom of the card or use any of the credentials below:
+
+| Role | 1-Click Button | Username / Email | Password |
+| :--- | :--- | :--- | :--- |
+| **Super Admin** | 👑 **Admin** | `admin` or `admin@devplus.io` | `Password1234!` (or any) |
+| **BD Team (Admin)** | 💼 **BD Team** | `bd` or `bd@devplus.io` | `Password1234!` (or any) |
+| **Mentor** | 👨‍🏫 **Mentor** | `mentor` or `mentor.david@devplus.io` | `Password1234!` (or any) |
+| **Student (Intern)** | 🎓 **Student** | `test` or `student@devplus.co.th` | `1234` (or any) |
+
+---
+
 ## 🐳 Quick Start with Docker (Recommended)
 
 With **Docker Desktop** installed, you can spin up both the Frontend Web App and Backend API with a single command:

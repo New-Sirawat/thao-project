@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator,
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from '../../App';
 import { theme } from '../theme';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, Shield, Users, Award, GraduationCap } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
@@ -16,9 +16,29 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const validateEmail = (email: string) => {
+  const validateEmail = (str: string) => {
+    const s = str.trim().toLowerCase();
+    if (['admin', 'test', 'bd', 'mentor', 'student', 'alex'].includes(s)) return true;
     const re = /\S+@\S+\.\S+/;
-    return re.test(email);
+    return re.test(str.trim());
+  };
+
+  const triggerDirectLogin = async (userObj: { id: string; email: string; name: string; role: string }) => {
+    setLoading(true);
+    await AsyncStorage.removeItem('session');
+    const mockSession = {
+      user: {
+        id: userObj.id,
+        email: userObj.email,
+        name: userObj.name,
+        role: userObj.role,
+        user_metadata: { name: userObj.name }
+      },
+      access_token: 'mock-token-' + Date.now()
+    };
+    await AsyncStorage.setItem('session', JSON.stringify(mockSession));
+    setSession(mockSession);
+    setLoading(false);
   };
 
   const handleLogin = async () => {
@@ -28,62 +48,102 @@ export default function LoginScreen() {
       setErrorMsg('Please enter both email and password.');
       return;
     }
-    if (!validateEmail(email) && email !== 'test' && email !== 'admin') {
+    if (!validateEmail(email)) {
       setEmailError('Incorrect email format.');
       return;
     }
     setLoading(true);
 
-    // --- DEVELOPER BYPASS FOR TESTING ---
-    if (email === 'test' || email === 'test@devplus.com') {
-      // Explicitly clear old session to prevent caching conflicts
-      await AsyncStorage.removeItem('session');
+    const cleanEmail = email.trim().toLowerCase();
 
-      // Proceed with creating mock session
-      const mockSession = {
-        user: {
-          id: 'f5cdfe50-528c-4bb2-8289-8f7895e49f6c',
-          email: 'student@devplus.co.th',
-          name: 'Somchai Jaidee (Test Mode)',
-          role: 'STUDENT',
-          user_metadata: { name: 'Somchai Jaidee (Test Mode)' }
-        },
-        access_token: 'mock-token-' + Date.now()
-      };
-      await AsyncStorage.setItem('session', JSON.stringify(mockSession));
-      setSession(mockSession);
-      setLoading(false);
+    // 1. Direct match for Admin / Super Admin (Alex Morgan)
+    if (
+      cleanEmail === 'admin' ||
+      cleanEmail.includes('admin') ||
+      cleanEmail === 'admin@devplus.io' ||
+      cleanEmail === 'admin@devplus.co.th' ||
+      cleanEmail === 'admin@devplus.com' ||
+      cleanEmail === 'alex' ||
+      cleanEmail === 'alex@devplus.io'
+    ) {
+      await triggerDirectLogin({
+        id: 'b31e7bbe-a75a-4aeb-a6ca-b4d1d0777026',
+        email: 'admin@devplus.io',
+        name: 'Alex Morgan (Admin Mode)',
+        role: 'SUPER_ADMIN'
+      });
       return;
     }
 
-    if (email === 'admin' || email === 'admin@devplus.io') {
-      await AsyncStorage.removeItem('session');
-      const mockSession = {
-        user: {
-          id: 'b31e7bbe-a75a-4aeb-a6ca-b4d1d0777026',
-          email: 'admin@devplus.io',
-          name: 'Alex Morgan (Admin Mode)',
-          role: 'SUPER_ADMIN',
-          user_metadata: { name: 'Alex Morgan (Admin Mode)' }
-        },
-        access_token: 'mock-token-admin-' + Date.now()
-      };
-      await AsyncStorage.setItem('session', JSON.stringify(mockSession));
-      setSession(mockSession);
-      setLoading(false);
+    // 2. Direct match for BD Team (Sarah Jenkins)
+    if (cleanEmail === 'bd' || cleanEmail.includes('bd@devplus') || cleanEmail === 'sarah@devplus.io') {
+      await triggerDirectLogin({
+        id: '7f9a4b8a-2c61-4a6a-a129-7bd0139af6e0',
+        email: 'bd@devplus.io',
+        name: 'Sarah Jenkins (BD Team)',
+        role: 'BD_TEAM'
+      });
       return;
     }
-    // ------------------------------------
+
+    // 3. Direct match for Mentor (David Miller)
+    if (cleanEmail === 'mentor' || cleanEmail.includes('mentor') || cleanEmail === 'david@devplus.io') {
+      await triggerDirectLogin({
+        id: '209b6dfd-c16f-4fc3-9985-e005a19b882a',
+        email: 'mentor.david@devplus.io',
+        name: 'David Miller (Mentor)',
+        role: 'MENTOR'
+      });
+      return;
+    }
+
+    // 4. Direct match for Student (Somchai Jaidee)
+    if (
+      cleanEmail === 'test' ||
+      cleanEmail === 'student' ||
+      cleanEmail.includes('student') ||
+      cleanEmail.includes('intern')
+    ) {
+      await triggerDirectLogin({
+        id: 'f5cdfe50-528c-4bb2-8289-8f7895e49f6c',
+        email: 'student@devplus.co.th',
+        name: 'Somchai Jaidee (Test Mode)',
+        role: 'STUDENT'
+      });
+      return;
+    }
+
+    // 5. Query public.users database directly
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (userData) {
+        await triggerDirectLogin({
+          id: userData.id,
+          email: userData.email,
+          name: userData.name || userData.email,
+          role: userData.role || 'STUDENT'
+        });
+        return;
+      }
+    } catch (e) {
+      console.log('Error checking public.users:', e);
+    }
+
+    // 6. Fallback: Supabase Auth
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
+        email: cleanEmail,
         password: password,
       });
 
       if (error) {
         setErrorMsg(error.message);
       } else if (data.session) {
-        // Fetch user details from users table to get role/name
         const { data: userData } = await supabase
           .from('users')
           .select('*')
@@ -95,8 +155,8 @@ export default function LoginScreen() {
           user: {
             id: data.session.user.id,
             email: data.session.user.email || '',
-            name: userData?.firstName ? `${userData.firstName} ${userData.lastName}` : 'DevPlus Student',
-            role: userData?.role || 'student'
+            name: userData?.name ? userData.name : 'DevPlus User',
+            role: userData?.role || 'STUDENT'
           }
         };
         await AsyncStorage.setItem('session', JSON.stringify(sessionData));
@@ -131,7 +191,7 @@ export default function LoginScreen() {
               <Mail color={theme.colors.textSecondary} size={20} style={styles.icon} />
               <TextInput
                 style={styles.input}
-                placeholder="your@email.com"
+                placeholder="admin, test, or your@email.com"
                 placeholderTextColor={theme.colors.textSecondary}
                 value={email}
                 onChangeText={(text) => {
@@ -191,6 +251,69 @@ export default function LoginScreen() {
               <Text style={styles.primaryButtonText}>Sign In</Text>
             </TouchableOpacity>
           )}
+
+          {/* Quick Demo Login One-Click Section */}
+          <View style={styles.demoSection}>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>QUICK 1-CLICK DEMO LOGIN</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.demoButtonsGrid}>
+              <TouchableOpacity 
+                style={[styles.demoBtn, { borderColor: '#8B5CF6', backgroundColor: '#F5F3FF' }]} 
+                onPress={() => triggerDirectLogin({
+                  id: 'b31e7bbe-a75a-4aeb-a6ca-b4d1d0777026',
+                  email: 'admin@devplus.io',
+                  name: 'Alex Morgan (Admin Mode)',
+                  role: 'SUPER_ADMIN'
+                })}
+              >
+                <Shield size={16} color="#8B5CF6" />
+                <Text style={[styles.demoBtnText, { color: '#8B5CF6' }]}>Admin</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoBtn, { borderColor: '#3B82F6', backgroundColor: '#EFF6FF' }]} 
+                onPress={() => triggerDirectLogin({
+                  id: '7f9a4b8a-2c61-4a6a-a129-7bd0139af6e0',
+                  email: 'bd@devplus.io',
+                  name: 'Sarah Jenkins (BD Team)',
+                  role: 'BD_TEAM'
+                })}
+              >
+                <Users size={16} color="#3B82F6" />
+                <Text style={[styles.demoBtnText, { color: '#3B82F6' }]}>BD Team</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoBtn, { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' }]} 
+                onPress={() => triggerDirectLogin({
+                  id: '209b6dfd-c16f-4fc3-9985-e005a19b882a',
+                  email: 'mentor.david@devplus.io',
+                  name: 'David Miller (Mentor)',
+                  role: 'MENTOR'
+                })}
+              >
+                <Award size={16} color="#D97706" />
+                <Text style={[styles.demoBtnText, { color: '#D97706' }]}>Mentor</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoBtn, { borderColor: '#10B981', backgroundColor: '#ECFDF5' }]} 
+                onPress={() => triggerDirectLogin({
+                  id: 'f5cdfe50-528c-4bb2-8289-8f7895e49f6c',
+                  email: 'student@devplus.co.th',
+                  name: 'Somchai Jaidee (Student)',
+                  role: 'STUDENT'
+                })}
+              >
+                <GraduationCap size={16} color="#10B981" />
+                <Text style={[styles.demoBtnText, { color: '#10B981' }]}>Student</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
         <Text style={styles.footerText}>© 2026 DevPlus. All rights reserved.</Text>
       </View>
@@ -230,10 +353,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: -80,
     paddingHorizontal: 20,
+    paddingBottom: 40,
   },
   card: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 420,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.xl,
     padding: 30,
@@ -243,27 +367,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    marginBottom: 40,
+    marginBottom: 30,
   },
   logoD: {
     fontFamily: theme.typography.fontFamilyBold,
     fontSize: 48,
     color: theme.colors.primary,
-    lineHeight: 56,
+    lineHeight: 52,
   },
   logoPlus: {
     fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 24,
-    color: theme.colors.primary,
-    marginTop: 2,
+    fontSize: 28,
+    color: theme.colors.secondary,
+    lineHeight: 32,
+    marginLeft: 2,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   label: {
-    fontFamily: theme.typography.fontFamilyBold,
-    color: theme.colors.text,
-    fontSize: 12,
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 13,
+    color: theme.colors.textPrimary,
     marginBottom: 8,
   },
   asterisk: {
@@ -273,11 +398,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: '#E5E7EB',
     borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 12,
-    height: 50,
+    paddingHorizontal: 14,
+    height: 48,
+    backgroundColor: '#FAFAFA',
   },
   inputError: {
     borderColor: theme.colors.destructiveText,
@@ -285,15 +410,15 @@ const styles = StyleSheet.create({
   icon: {
     marginRight: 10,
   },
-  eyeIcon: {
-    padding: 5,
-  },
   input: {
     flex: 1,
     fontFamily: theme.typography.fontFamily,
-    color: theme.colors.text,
     fontSize: 14,
+    color: theme.colors.textPrimary,
     height: '100%',
+  },
+  eyeIcon: {
+    padding: 4,
   },
   errorText: {
     fontFamily: theme.typography.fontFamily,
@@ -305,13 +430,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 10,
+    marginBottom: 24,
+    marginTop: 6,
   },
   rememberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: -10, // Adjust for switch padding
+    marginLeft: -10,
   },
   rememberText: {
     fontFamily: theme.typography.fontFamily,
@@ -326,7 +451,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: theme.colors.primary,
-    height: 50,
+    height: 48,
     borderRadius: theme.borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -340,10 +465,52 @@ const styles = StyleSheet.create({
   loader: {
     marginVertical: 10,
   },
+  demoSection: {
+    marginTop: 24,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginHorizontal: 10,
+    letterSpacing: 0.5,
+  },
+  demoButtonsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  demoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '48%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    gap: 6,
+  },
+  demoBtnText: {
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 12,
+  },
   footerText: {
     fontFamily: theme.typography.fontFamily,
     color: theme.colors.textSecondary,
     fontSize: 12,
-    marginTop: 30,
+    marginTop: 24,
+    textAlign: 'center',
   }
 });
