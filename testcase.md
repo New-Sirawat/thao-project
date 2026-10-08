@@ -1,6 +1,6 @@
 # DEVPLUS APP - STUDENT MOBILE APP TEST CASES
 
-เอกสารนี้ใช้สำหรับทดสอบการทำงานของ Mobile App (ฝั่ง Student) ตาม Use Case ทั้งหมดที่ได้รับมอบหมาย โดยมีจุดประสงค์เพื่อให้แน่ใจว่าทุกฟังก์ชันทำงานได้อย่างถูกต้องร่วมกับระบบฐานข้อมูล Supabase
+This document provides test cases for validating the DevPlus Mobile App (Student role) across assigned use cases, ensuring all features function properly with the Supabase database.
 
 ---
 
@@ -8,19 +8,19 @@
 ### Test Case 1.1: Login (Developer Bypass)
 - **Use Case:** UC-1.1
 - **Steps:**
-  1. เปิดแอปพลิเคชัน (หรือรัน `npm run web`)
-  2. ในช่อง Email พิมพ์คำว่า `test`
-  3. ในช่อง Password พิมพ์รหัสผ่านอะไรก็ได้ (เช่น `1234`)
-  4. กดปุ่ม "Sign In"
-- **Expected Result:** เข้าสู่ระบบได้สำเร็จ และเปลี่ยนหน้าไปยัง HomeScreen พร้อมแสดงชื่อนักศึกษา "Somchai Jaidee (Test Mode)"
+  1. Open the application (or run `npm run web`).
+  2. In the Email field, type `test`.
+  3. In the Password field, enter any password (e.g., `1234`).
+  4. Tap the "Sign In" button.
+- **Expected Result:** Successfully authenticated and redirected to HomeScreen, displaying the student name "Somchai Jaidee (Test Mode)".
 
 ### Test Case 1.2: Logout
 - **Use Case:** UC-1.2
 - **Steps:**
-  1. ไปที่เมนู "Profile" (แท็บขวาสุด)
-  2. เลื่อนลงมาด้านล่างสุด แล้วกดปุ่ม "Log Out"
-  3. ยืนยันการออกจากระบบบน Popup
-- **Expected Result:** ระบบนำผู้ใช้กลับไปยังหน้า LoginScreen ทันที
+  1. Navigate to the "Profile" tab (far right).
+  2. Scroll down to the bottom and tap "Log Out".
+  3. Confirm logout on the dialog prompt.
+- **Expected Result:** User is immediately redirected to LoginScreen.
 
 ---
 
@@ -28,17 +28,17 @@
 ### Test Case 2.1: View Personal Profile
 - **Use Case:** UC-2.2
 - **Steps:**
-  1. ล็อคอินเข้าสู่ระบบ
-  2. ไปที่แท็บ "Profile"
-- **Expected Result:** แสดงข้อมูลส่วนตัวของนักศึกษา (Email, Phone, Location) โดยดึงข้อมูลล่าสุดมาจากตาราง `profiles` ในฐานข้อมูล
+  1. Log in to the application.
+  2. Navigate to the "Profile" tab.
+- **Expected Result:** Displays student personal profile information (Email, Phone, Location) fetched from the `profiles` table in the database.
 
 ### Test Case 2.2: Edit Personal Profile
 - **Use Case:** UC-2.3
 - **Steps:**
-  1. ในหน้า Profile กดปุ่ม "Edit Profile" (ไอคอนสีฟ้า)
-  2. แก้ไขข้อมูลเบอร์โทรศัพท์ (Phone) หรือที่อยู่ (Location)
-  3. กดปุ่ม "Save Changes"
-- **Expected Result:** มี Popup แจ้งเตือนอัปเดตสำเร็จ และหน้าต่าง Profile จะแสดงข้อมูลใหม่ที่เพิ่งแก้ไข (ข้อมูลจะถูกบันทึกลง Supabase)
+  1. On the Profile screen, tap the "Edit Profile" button (blue icon).
+  2. Update the phone number (Phone) or address (Location).
+  3. Tap "Save Changes".
+- **Expected Result:** An alert confirms successful update, and the Profile screen displays the newly updated information (persisted to Supabase).
 
 ---
 
@@ -46,8 +46,8 @@
 ### Test Case 3.1: View Training Plan
 - **Use Case:** UC-3.2
 - **Steps:**
-  1. ไปที่แท็บ "Training"
-- **Expected Result:** แสดงข้อมูลแผนการฝึกงานที่ดึงมาจากตาราง `training_plans` ในฐานข้อมูล เช่น หัวข้อการฝึกงาน (Phase), ระยะเวลา, และสถานะความคืบหน้า (Progress)
+  1. Navigate to the "Training" tab.
+- **Expected Result:** Displays the training curriculum fetched from the `training_plans` table, including training phase titles, duration, and progress status.
 
 ---
 
@@ -55,19 +55,19 @@
 ### Test Case 4.1: GPS Check-in
 - **Use Case:** UC-5.1
 - **Steps:**
-  1. ไปที่แท็บ "Home"
-  2. ระบบจะทำการดึงพิกัด GPS ปัจจุบันของคุณ และเทียบกับระยะทางของบริษัท (96 Nguyễn Đình Hoàn)
-  3. กดปุ่ม "Check In" สีเขียวใหญ่ตรงกลางจอ
+  1. Navigate to the "Home" tab.
+  2. The system retrieves your current GPS coordinates and calculates the distance to the office (96 Nguyen Dinh Hoan).
+  3. Tap the large green "Check In" button in the center.
 - **Expected Result:** 
-  - ถ้าระยะทาง **ไม่เกิน 500 เมตร**: ระบบจะบันทึก Check-in สำเร็จ และเริ่มจับเวลาทำงาน
-  - ถ้าระยะทาง **เกิน 500 เมตร**: จะมี Popup แจ้งเตือนว่า "คุณอยู่นอกพื้นที่บริษัท" (สามารถกดปุ่ม Bypass Location เพื่อจำลองการเข้าใกล้บริษัทได้)
+  - If distance is **within 500 meters**: Check-in is recorded successfully and the work timer begins.
+  - If distance is **greater than 500 meters**: An alert notifies "Outside company radius" (You can tap the Bypass Location button to simulate being near the office).
 
 ### Test Case 4.2: View Attendance History
 - **Use Case:** UC-5.3
 - **Steps:**
-  1. ไปที่แท็บ "Home"
-  2. กดปุ่ม "View History" ใต้ปุ่ม Check-in
-- **Expected Result:** นำทางไปยังหน้า Attendance History และแสดงรายการการเข้างานที่ผ่านมา (ดึงจากตาราง `attendances`) โดยจะแสดงเวลาเข้า-ออก และสถานะ (เช่น On Time, Late)
+  1. Navigate to the "Home" tab.
+  2. Tap the "View History" button beneath the Check-in button.
+- **Expected Result:** Navigates to Attendance History, displaying previous attendance records (retrieved from the `attendances` table) with check-in/out times and status (e.g., On Time, Late).
 
 ---
 
@@ -75,18 +75,18 @@
 ### Test Case 5.1: Submit Leave Request
 - **Use Case:** UC-6.1
 - **Steps:**
-  1. ไปที่หน้าแรก (Home) แล้วกดการ์ด "Leave Request" (หรือไปจากเมนูลัด)
-  2. กรอกวันที่ลา (Start Date - End Date)
-  3. เลือกประเภทการลา (Type) เช่น Sick Leave, Personal Leave
-  4. ระบุเหตุผลการลา (Reason) แล้วกด "Submit Request"
-- **Expected Result:** คำขอลาจะถูกบันทึกสำเร็จลงตาราง `leave_requests` และกลับมาที่หน้าหลัก
+  1. From Home screen, tap "Leave Request" (or access via quick actions).
+  2. Enter the leave date range (Start Date - End Date).
+  3. Select leave type (e.g., Sick Leave, Personal Leave).
+  4. Provide a reason and tap "Submit Request".
+- **Expected Result:** Leave request is saved to the `leave_requests` table and returns to the main screen.
 
 ### Test Case 5.2: View Leave Request Status
 - **Use Case:** UC-6.2
 - **Steps:**
-  1. ไปที่เมนู Leave Request 
-  2. ดูที่หมวด "My Requests" หรือ "Pending Requests"
-- **Expected Result:** แสดงรายการที่เคยขอลาไว้ และสถานะปัจจุบัน (เช่น Pending, Approved) แบบ Real-time ตามฐานข้อมูล
+  1. Navigate to the Leave Request screen.
+  2. View "My Requests" or "Pending Requests" section.
+- **Expected Result:** Displays previously submitted requests and their current real-time status (e.g., Pending, Approved) from the database.
 
 ---
 
@@ -94,12 +94,12 @@
 ### Test Case 6.1: Submit & View Q&A
 - **Use Case:** UC-8.1, UC-8.2
 - **Steps:**
-  1. ไปที่แท็บ "Q&A" (ไอคอนรูปแชท)
-  2. กดปุ่ม "+ New Question"
-  3. พิมพ์หัวข้อคำถาม (Title) และเนื้อหา (Content)
-  4. กดปุ่ม "Submit"
-  5. กลับมาดูที่หน้ารวม Q&A
-- **Expected Result:** คำถามที่ตั้งใหม่จะโผล่ในรายการ (ดึงจาก `qa_questions`) และเมื่อมี Mentor มาตอบ จะมีข้อความแสดงในหน้ารายละเอียด (ดึงจาก `qa_answers`)
+  1. Navigate to the "Q&A" tab (chat icon).
+  2. Tap "+ New Question".
+  3. Enter question Title and Content.
+  4. Tap "Submit".
+  5. Return to Q&A feed.
+- **Expected Result:** The newly posted question appears in the feed (from `qa_questions`). Once a mentor replies, the answers appear in the detail screen (from `qa_answers`).
 
 ---
 
@@ -107,7 +107,7 @@
 ### Test Case 7.1: View Event List & Details
 - **Use Case:** UC-9.1
 - **Steps:**
-  1. ไปที่หน้าแรก (Home) เลื่อนลงมาที่หมวด "Upcoming Events" (หรือเข้าจากไอคอนปฏิทิน Events/Announcements)
-  2. สังเกตรายการ Event ที่แสดงอยู่
-  3. กดคลิกที่ Event เพื่ออ่านรายละเอียดเพิ่มเติม
-- **Expected Result:** แสดงรายชื่อและรายละเอียดของกิจกรรมที่มาจากตาราง `events` ใน Supabase อย่างถูกต้อง (เช่น วันที่จัดงาน, สถานที่, และคำอธิบาย)
+  1. On the Home screen, scroll down to "Upcoming Events" (or tap Events/Announcements calendar icon).
+  2. Review the displayed events.
+  3. Tap an event to view full details.
+- **Expected Result:** Displays the event details fetched from the `events` table in Supabase (including date, venue/location, and description).

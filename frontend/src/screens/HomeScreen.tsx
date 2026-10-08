@@ -474,9 +474,9 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={() => {
             setSimulatedLocation('near');
             if (Platform.OS === 'web') {
-              window.alert('จำลองว่าคุณยืนอยู่ในระยะ 500 เมตรแล้ว! (Mock Near)');
+              window.alert('Simulated that you are within 500 meters! (Mock Near)');
             } else {
-              Alert.alert('Bypass', 'จำลองว่าคุณยืนอยู่ในระยะ 500 เมตรแล้ว! (Mock Near)');
+              Alert.alert('Bypass', 'Simulated that you are within 500 meters! (Mock Near)');
             }
           }} style={[styles.resetDemoBtn, { flex: 1, marginLeft: 5, backgroundColor: simulatedLocation === 'near' ? '#10B981' : '#3B82F6' }]}>
             <Text style={[styles.resetDemoText, { color: '#fff' }]}>{simulatedLocation === 'near' ? 'Location: Near' : 'Mock: Get Near'}</Text>

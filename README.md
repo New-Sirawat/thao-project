@@ -7,6 +7,7 @@ A full-stack web application built with **React Native Web (Expo)** for the fron
 ---
 
 ## 📋 Table of Contents
+
 - [✨ Key Features](#-key-features)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [🐳 Quick Start with Docker (Recommended)](#-quick-start-with-docker-recommended)
@@ -52,17 +53,20 @@ A full-stack web application built with **React Native Web (Expo)** for the fron
 With **Docker Desktop** installed, you can spin up both the Frontend Web App and Backend API with a single command:
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/New-Sirawat/thao-project.git
 cd thao-project
 ```
 
 ### 2. Run with Docker Compose
+
 ```bash
 docker compose up --build
 ```
 
 ### 3. Open in Browser
+
 - 🌐 **Frontend Web Application**: [http://localhost:8081](http://localhost:8081)
 - 🔌 **Backend REST API**: [http://localhost:3000](http://localhost:3000)
 
@@ -75,22 +79,27 @@ docker compose up --build
 If you prefer running and debugging the application natively on your machine:
 
 ### Prerequisites
+
 - [Node.js](https://nodejs.org/) (v18 or higher)
 - [Go](https://go.dev/) (v1.22 or higher)
 
 ### Step 1: Start Backend API
+
 ```bash
 cd backend
 go run main.go
 ```
+
 > The backend server starts listening on `http://localhost:3000`
 
 ### Step 2: Start Frontend Web Application (In a separate terminal window)
+
 ```bash
 cd frontend
 npm install
 npm run web
 ```
+
 > The Expo web server will launch and automatically open in your browser at `http://localhost:8081` (or press `w` in the terminal to open).
 
 ---
@@ -122,7 +131,9 @@ thao-project/
 ## ⚙️ Environment Variables
 
 ### Backend (`backend/.env`)
+
 A ready-to-use template is provided in `backend/.env.example`. Pre-configured fallback credentials to Supabase are included out of the box:
+
 ```env
 PORT=3000
 SUPABASE_URL=https://vescjjkwgkmjhbsgbvvt.supabase.co
@@ -130,4 +141,5 @@ SUPABASE_KEY=sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y
 ```
 
 ### Frontend (`frontend/.env`)
+
 - `EXPO_PUBLIC_API_URL` (Optional): Backend API base URL (defaults dynamically to `http://localhost:3000`).

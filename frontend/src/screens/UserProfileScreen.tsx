@@ -55,9 +55,9 @@ export default function UserProfileScreen() {
       const { error } = await supabase.auth.signOut();
       if (error) {
         if (Platform.OS === 'web') {
-          window.alert('Offline Mode: คุณออกจากระบบแบบออฟไลน์แล้ว');
+          window.alert('Offline Mode: You have logged out offline.');
         } else {
-          Alert.alert('Offline Mode', 'คุณออกจากระบบแบบออฟไลน์แล้ว (You logged out offline)');
+          Alert.alert('Offline Mode', 'You have logged out offline.');
         }
       }
       await AsyncStorage.removeItem('session');
