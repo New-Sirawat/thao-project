@@ -1,0 +1,1 @@
+async function check(table) { const res = await fetch('https://vescjjkwgkmjhbsgbvvt.supabase.co/rest/v1/' + table + '?limit=1', { headers: { apikey: 'sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y' } }); console.log(table, res.status); } async function run() { await check('teams'); await check('team_members'); await check('campuses'); await check('groups'); } run();

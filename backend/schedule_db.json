@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1",
+    "location": "Room 302",
+    "time": "10:00 AM - 11:30 AM",
+    "title": "React Native Workshop",
+    "type": "workshop"
+  },
+  {
+    "id": "2",
+    "location": "Google Meet",
+    "time": "3:00 PM - 4:00 PM",
+    "title": "Project Demo Prep",
+    "type": "meeting"
+  }
+]

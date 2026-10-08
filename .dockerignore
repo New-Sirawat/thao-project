@@ -1,0 +1,9 @@
+.git
+.vscode
+node_modules
+**/node_modules
+**/.expo
+**/dist
+**/web-build
+**/*.exe
+**/testbuild

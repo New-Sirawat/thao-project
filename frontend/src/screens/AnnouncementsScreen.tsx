@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator }
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Megaphone, Calendar as CalendarIcon, ChevronRight } from 'lucide-react-native';
 import { theme } from '../theme';
+import { supabase } from '../lib/supabase';
 
 interface Announcement {
   id: string;
@@ -54,16 +55,33 @@ export default function AnnouncementsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://192.168.2.28:3000/api/announcements')
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === 'success') {
-          setAnnouncements(data.data);
-        }
-      })
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
+    fetchAnnouncements();
   }, []);
+
+  const fetchAnnouncements = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        const formatted = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          content: item.description,
+          date: new Date(item.created_at).toLocaleDateString(),
+          author: 'HR / Admin',
+          isImportant: item.type === 'ANNOUNCEMENT'
+        }));
+        setAnnouncements(formatted);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>

@@ -1,0 +1,1 @@
+async function run() { const res = await fetch('https://nominatim.openstreetmap.org/search?q=96+Nguyen+Dinh+Hoan,+Da+Nang,+Vietnam&format=json'); const data = await res.json(); console.log(data); } run();

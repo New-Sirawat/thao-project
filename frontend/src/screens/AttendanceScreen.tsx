@@ -1,432 +1,233 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import * as Location from 'expo-location';
+import React from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme';
-import { MapPin, Clock, FileText } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, Clock, Edit2, Trash2, Users } from 'lucide-react-native';
 import { AuthContext } from '../../App';
+import { supabase } from '../lib/supabase';
 
 export default function AttendanceScreen() {
   const navigation = useNavigation();
-  const { role } = useContext(AuthContext);
-  const [timeStr, setTimeStr] = useState('');
-  const [locationStatus, setLocationStatus] = useState('Checking GPS...');
-  const [locationColor, setLocationColor] = useState(theme.colors.warning);
-  const [loading, setLoading] = useState(false);
-  const [workingHours, setWorkingHours] = useState('0h 0m');
-  const [checkInResult, setCheckInResult] = useState<{type: 'success' | 'error', text: string} | null>(null);
-  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const { session } = React.useContext(AuthContext);
 
-  useEffect(() => {
-    // Update digital clock
-    const updateTime = () => {
-      const now = new Date();
-      setTimeStr(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+  const [history, setHistory] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  
+  const [stats, setStats] = React.useState({
+    totalDays: 0,
+    onTime: 0,
+    late: 0,
+    absent: 0,
+    onLeave: 0,
+  });
 
-    // Check GPS Permissions
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationStatus('GPS Permission Denied');
-        setLocationColor(theme.colors.destructiveText);
-        return;
-      }
-      setLocationStatus('GPS Connection: Good');
-      setLocationColor(theme.colors.success);
-    })();
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchAttendance();
+    }, [session])
+  );
 
-    // Check if already checked in today
-    const checkTodayStatus = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-        
-        const response = await fetch(`http://192.168.2.28:3000/api/attendance/today?user_id=${session.user.id}`);
-        const result = await response.json();
-        
-        if (response.ok && result.data) {
-          if (result.data.status === 'Checked In') {
-            setIsCheckedIn(true);
-            setWorkingHours('...'); // Can be calculated from check_in_time
-          } else if (result.data.status === 'Completed') {
-            setIsCheckedIn(false);
-            setCheckInResult({ type: 'success', text: 'You have already completed your shift today.' });
-          }
-        }
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    
-    checkTodayStatus();
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleCheckIn = async () => {
-    setLoading(true);
-    setCheckInResult(null);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setCheckInResult({ type: 'error', text: 'You must be logged in.' });
-      setLoading(false);
-      return;
-    }
-
-    if (isCheckedIn) {
-      // Check-out API
-      try {
-        const response = await fetch('http://192.168.2.28:3000/api/attendance/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: session.user.id }),
-        });
-        if (response.ok) {
-          setIsCheckedIn(false);
-          setCheckInResult({ type: 'success', text: 'Check-out successful! Good job today.' });
-        } else {
-          setCheckInResult({ type: 'error', text: 'Failed to check out.' });
-        }
-      } catch (error) {
-        setCheckInResult({ type: 'error', text: 'Network Error.' });
-      }
-      setLoading(false);
-      return;
-    }
+  const fetchAttendance = async () => {
+    if (!session) return;
     try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setCheckInResult({ type: 'error', text: 'GPS Permission Denied. Please enable location services.' });
-        setLoading(false);
-        return;
+      const { data, error } = await supabase
+        .from('attendances')
+        .select('*')
+        .eq('userId', session.user.id)
+        .order('date', { ascending: false });
+
+      if (data) {
+        const formattedHistory = data.map(item => {
+          const checkInStr = item.checkIn ? (item.checkIn.endsWith('Z') ? item.checkIn : item.checkIn + 'Z') : null;
+          const inTime = checkInStr ? new Date(checkInStr) : null;
+          const outTime = item.checkOut ? new Date(item.checkOut.endsWith('Z') ? item.checkOut : item.checkOut + 'Z') : null;
+          
+          let status = 'On Time';
+          if (item.status === 'LATE') status = 'Late';
+          else if (item.status === 'ABSENT') status = 'Absent';
+          else if (item.status === 'ON_LEAVE') status = 'On Leave';
+          else if (item.status === 'PRESENT' && inTime) {
+            if (inTime.getHours() > 8 || (inTime.getHours() === 8 && inTime.getMinutes() > 15)) {
+               status = 'Late';
+            }
+          } else if (!item.status && inTime) {
+            if (inTime.getHours() > 8 || (inTime.getHours() === 8 && inTime.getMinutes() > 15)) {
+               status = 'Late';
+            }
+          } else if (!inTime) {
+            status = 'Absent';
+          }
+          
+          let calculatedTotalHours = null;
+          if (inTime && outTime) {
+            const diffMs = outTime.getTime() - inTime.getTime();
+            if (diffMs > 0) {
+              const hours = Math.floor(diffMs / 3600000);
+              const mins = Math.floor((diffMs % 3600000) / 60000);
+              const secs = Math.floor((diffMs % 60000) / 1000);
+              calculatedTotalHours = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+          }
+          
+          return {
+            id: item.id,
+            date: inTime ? inTime.toLocaleDateString() : (item.date || 'Unknown'),
+            checkIn: inTime ? inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+            checkOut: outTime ? outTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (inTime ? 'Working...' : '-'),
+            status: status,
+            totalHours: calculatedTotalHours
+          };
+        });
+        setHistory(formattedHistory);
+        
+        let onTimeCount = formattedHistory.filter(h => h.status === 'On Time').length;
+        let lateCount = formattedHistory.filter(h => h.status === 'Late').length;
+        let absentCount = formattedHistory.filter(h => h.status === 'Absent').length;
+        let onLeaveCount = formattedHistory.filter(h => h.status === 'On Leave').length;
+        
+        setStats({
+          totalDays: data.length,
+          onTime: onTimeCount,
+          late: lateCount,
+          absent: absentCount,
+          onLeave: onLeaveCount
+        });
       }
-
-      let location = await Location.getCurrentPositionAsync({});
-
-      // NOTE: If testing on Android Emulator, change localhost to 10.0.2.2
-      // If testing on a physical device, change to your PC's local IP address (e.g., 192.168.1.x)
-      const response = await fetch('http://192.168.2.28:3000/api/attendance/checkin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: session.user.id,
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setCheckInResult({ type: 'success', text: 'Check-in successful! Have a great day.' });
-        setWorkingHours('0h 1m'); 
-        setIsCheckedIn(true);
-      } else {
-        setCheckInResult({ type: 'error', text: `Check-In Failed: ${result.error}\n(Distance: ${Math.round(result.distance || 0)}m)\nYour GPS: ${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}` });
-      }
-    } catch (error: any) {
-      console.error(error);
-      setCheckInResult({ type: 'error', text: 'Network Error: Could not connect to the server (Check localhost/IP). Details: ' + error.message });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  const attendanceRate = stats.totalDays > 0 ? Math.round((stats.onTime / stats.totalDays) * 100) : 0;
+
+
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'On Time': return '#10B981'; // Green
+      case 'Late': return '#F59E0B'; // Amber
+      case 'Absent': return '#EF4444'; // Red
+      case 'On Leave': return '#3B82F6'; // Blue
+      default: return theme.colors.textSecondary;
+    }
+  };
+
+  const renderStudentView = () => (
+    <>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Attendance Rate</Text>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressText}>{attendanceRate}%</Text>
+          <Text style={styles.progressSubText}>Excellent</Text>
+        </View>
+        <View style={styles.progressBarBackground}>
+          <View style={[styles.progressBarFill, { width: `${attendanceRate}%` }]} />
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Overview</Text>
+      <View style={styles.statsGrid}>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: '#10B981' }]}>{stats.onTime}</Text>
+          <Text style={styles.statLabel}>On Time</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: '#F59E0B' }]}>{stats.late}</Text>
+          <Text style={styles.statLabel}>Late</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Recent History</Text>
+      <View style={styles.historyList}>
+        {loading ? (
+           <ActivityIndicator size="small" color={theme.colors.primary} style={{ padding: 20 }} />
+        ) : history.length === 0 ? (
+           <Text style={{ padding: 20, textAlign: 'center', color: theme.colors.textSecondary }}>No attendance history</Text>
+        ) : (
+          history.map((item) => (
+            <View key={item.id} style={styles.historyItem}>
+              <View style={styles.historyLeft}>
+                <View style={[styles.iconWrapper, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                  <Clock size={20} color={getStatusColor(item.status)} />
+                </View>
+                <View>
+                  <Text style={styles.historyDate}>{item.date}</Text>
+                  <Text style={styles.historyTime}>{item.checkIn} - {item.checkOut}</Text>
+                  {item.totalHours && (
+                    <Text style={{ fontSize: 11, color: theme.colors.primary, marginTop: 2, fontFamily: theme.typography.fontFamilySemiBold }}>
+                      Total: {item.totalHours}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+    </>
+  );
+
+
 
   return (
     <View style={styles.container}>
-      {/* Orange Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Attendance</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <ArrowLeft color={theme.colors.surface} size={24} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Attendance History</Text>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Main Card */}
-        <View style={styles.card}>
-          <Text style={styles.dateText}>{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-          <Text style={styles.digitalClock}>{timeStr}</Text>
-          
-          <View style={styles.gpsContainer}>
-            <MapPin color={locationColor} size={16} />
-            <Text style={[styles.gpsText, { color: locationColor }]}>
-              {locationStatus}
-            </Text>
-          </View>
-        </View>
-
-        {/* Big Orange Button */}
-        <View style={styles.buttonWrapper}>
-          <TouchableOpacity 
-            style={[styles.checkInButton, isCheckedIn && styles.checkOutButton]} 
-            onPress={handleCheckIn}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color={theme.colors.surface} size="large" />
-            ) : (
-              <View style={styles.buttonContent}>
-                <MapPin color={theme.colors.surface} size={28} />
-                <Text style={styles.checkInText}>
-                  {isCheckedIn ? 'Check Out' : 'Check-In Now'}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          {checkInResult && (
-            <View style={[styles.resultBox, checkInResult.type === 'success' ? styles.resultSuccess : styles.resultError]}>
-              <Text style={[styles.resultText, checkInResult.type === 'success' ? styles.resultSuccessText : styles.resultErrorText]}>
-                {checkInResult.text}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statBox}>
-            <Clock color={theme.colors.primary} size={20} />
-            <Text style={styles.statLabel}>Working Hours</Text>
-            <Text style={styles.statValue}>{workingHours}</Text>
-          </View>
-        </View>
-
-        {/* Link */}
-        <TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('AttendanceHistory' as never)}>
-          <Text style={styles.historyText}>View Attendance History ➔</Text>
-        </TouchableOpacity>
-
-        {/* Leave Actions */}
-        <View style={styles.leaveActionsContainer}>
-          <TouchableOpacity style={styles.leaveButton} onPress={() => navigation.navigate('LeaveRequest' as never)}>
-            <FileText color={theme.colors.primary} size={24} />
-            <Text style={styles.leaveButtonText}>Request Leave</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.leaveButton} onPress={() => navigation.navigate('LeaveStatus' as never)}>
-            <Clock color={theme.colors.primary} size={24} />
-            <Text style={styles.leaveButtonText}>Leave Status</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Mentor Action: Leave Approvals */}
-        {role === 'Mentor' && (
-          <View style={styles.mentorActionContainer}>
-            <Text style={styles.mentorLabel}>Mentor Actions</Text>
-            <TouchableOpacity style={styles.approveButton} onPress={() => navigation.navigate('LeaveApprovals' as never)}>
-              <FileText color={theme.colors.surface} size={20} />
-              <Text style={styles.approveButtonText}>Manage Leave Approvals</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
+        {renderStudentView()}
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     backgroundColor: theme.colors.primary,
     paddingTop: 60,
     paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     ...theme.shadows.medium,
   },
-  headerTitle: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 20,
-    color: theme.colors.surface,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: theme.colors.surface,
-    width: '100%',
-    padding: 30,
-    borderRadius: theme.borderRadius.lg,
-    alignItems: 'center',
-    marginTop: 20,
-    ...theme.shadows.medium,
-  },
-  dateText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    marginBottom: 10,
-  },
-  digitalClock: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 48,
-    color: theme.colors.text,
-    letterSpacing: 2,
-    marginBottom: 15,
-  },
-  gpsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(243, 244, 246, 0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  gpsText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    marginLeft: 6,
-  },
-  buttonWrapper: {
-    marginVertical: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkInButton: {
-    backgroundColor: theme.colors.primary,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
-    borderColor: 'rgba(255, 140, 0, 0.2)',
-  },
-  checkOutButton: {
-    backgroundColor: theme.colors.destructiveText,
-    shadowColor: theme.colors.destructiveText,
-    borderColor: 'rgba(255, 59, 48, 0.2)',
-  },
-  buttonContent: {
-    alignItems: 'center',
-  },
-  checkInText: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 22,
-    color: theme.colors.surface,
-    marginTop: 10,
-  },
-  statsContainer: {
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  statBox: {
-    backgroundColor: theme.colors.surface,
-    padding: 20,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    width: '80%',
-    ...theme.shadows.subtle,
-  },
-  statLabel: {
-    fontFamily: theme.typography.fontFamily,
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 24,
-    color: theme.colors.text,
-  },
-  historyLink: {
-    padding: 10,
-  },
-  historyText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    color: theme.colors.primary,
-  },
-  leaveActionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    width: '100%',
-  },
-  leaveButton: {
-    backgroundColor: theme.colors.surface,
-    flex: 1,
-    padding: 15,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    marginHorizontal: 5,
-    ...theme.shadows.subtle,
-  },
-  leaveButtonText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    color: theme.colors.text,
-    marginTop: 8,
-  },
-  mentorActionContainer: {
-    marginTop: 25,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  mentorLabel: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 16,
-    color: theme.colors.text,
-    marginBottom: 10,
-  },
-  approveButton: {
-    backgroundColor: theme.colors.primary, // Changed from secondary for better contrast
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: theme.borderRadius.md,
-    ...theme.shadows.subtle,
-  },
-  approveButtonText: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 14,
-    color: theme.colors.surface,
-    marginLeft: 8,
-  },
-  resultBox: {
-    marginTop: 20,
-    padding: 15,
-    borderRadius: theme.borderRadius.md,
-    width: '100%',
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  resultSuccess: {
-    backgroundColor: '#E8F5E9',
-    borderColor: theme.colors.success,
-  },
-  resultError: {
-    backgroundColor: theme.colors.destructive,
-    borderColor: theme.colors.destructiveText,
-  },
-  resultText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  resultSuccessText: {
-    color: theme.colors.success,
-  },
-  resultErrorText: {
-    color: theme.colors.destructiveText,
-  },
+  backButton: { padding: 5 },
+  headerTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 20, color: theme.colors.surface },
+  content: { padding: 20 },
+  card: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: 20, marginBottom: 20, ...theme.shadows.subtle },
+  cardTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 16, color: theme.colors.text, marginBottom: 15 },
+  progressRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 15 },
+  progressText: { fontFamily: theme.typography.fontFamilyBold, fontSize: 36, color: theme.colors.primary, marginRight: 10 },
+  progressSubText: { fontFamily: theme.typography.fontFamilySemiBold, fontSize: 16, color: theme.colors.success },
+  progressBarBackground: { height: 8, backgroundColor: theme.colors.border, borderRadius: 4, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: theme.colors.primary, borderRadius: 4 },
+  sectionTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 18, color: theme.colors.text, marginBottom: 15 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  statBox: { width: '48%', backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.md, padding: 15, alignItems: 'center', marginBottom: 15, ...theme.shadows.subtle },
+  statValue: { fontFamily: theme.typography.fontFamilyBold, fontSize: 28, marginBottom: 5 },
+  statLabel: { fontFamily: theme.typography.fontFamily, fontSize: 14, color: theme.colors.textSecondary },
+  historyList: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, ...theme.shadows.subtle },
+  historyItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  historyLeft: { flexDirection: 'row', alignItems: 'center' },
+  iconWrapper: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 15 },
+  historyDate: { fontFamily: theme.typography.fontFamilyBold, fontSize: 16, color: theme.colors.text, marginBottom: 4 },
+  historyTime: { fontFamily: theme.typography.fontFamily, fontSize: 13, color: theme.colors.textSecondary },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusText: { fontFamily: theme.typography.fontFamilySemiBold, fontSize: 12 },
+  
+
 });

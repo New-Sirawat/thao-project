@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert } from 'react
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Check, X } from 'lucide-react-native';
 import { theme } from '../theme';
+import { API_BASE_URL } from '../lib/api';
 
 interface LeaveRequest {
   id: string;
@@ -26,7 +27,7 @@ export default function LeaveApprovalsScreen() {
   const fetchRequests = async () => {
     try {
       // Fetch all requests (no user_id passed)
-      const response = await fetch('http://192.168.2.28:3000/api/leaves');
+      const response = await fetch(`${API_BASE_URL}/api/leaves`);
       const json = await response.json();
       if (json.status === 'success' && json.data) {
         // Filter out non-pending requests if you only want to show pending,
@@ -52,7 +53,7 @@ export default function LeaveApprovalsScreen() {
 
   const handleAction = async (id: string, action: 'Approved' | 'Rejected') => {
     try {
-      const response = await fetch(`http://192.168.2.28:3000/api/leaves/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/leaves/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: action })

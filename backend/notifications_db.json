@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1",
+    "isRead": false,
+    "message": "Please complete your onboarding profile.",
+    "time": "2 hours ago",
+    "title": "Welcome to Devplus"
+  },
+  {
+    "id": "2",
+    "isRead": true,
+    "message": "Your leave request for tomorrow has been approved.",
+    "time": "5 hours ago",
+    "title": "Leave Request Approved"
+  }
+]

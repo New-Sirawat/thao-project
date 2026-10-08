@@ -1,0 +1,35 @@
+[
+  {
+    "id": "1",
+    "program_id": "p1",
+    "author": "Somchai Jaidee",
+    "title": "React Native Navigation vs Expo Router",
+    "content": "อยากรู้ว่าตัวไหนเหมาะกับโปรเจกต์ขนาดใหญ่มากกว่ากันครับ? ตอนนี้กำลังลังเลระหว่างสองตัวนี้",
+    "likes": 5,
+    "time": "2h ago",
+    "tags": ["React Native", "Frontend"],
+    "created_at": "2026-06-26T00:00:00Z"
+  },
+  {
+    "id": "2",
+    "program_id": "p1",
+    "author": "Jane Doe",
+    "title": "การจัดการ State ใน React Native",
+    "content": "ปกติในโปรเจกต์ใช้ Redux กันอยู่ไหมคะ? หรือใช้ Context API/Zustand ดีกว่า",
+    "likes": 15,
+    "time": "5h ago",
+    "tags": ["React Native", "State Management"],
+    "created_at": "2026-06-25T20:00:00Z"
+  },
+  {
+    "id": "3",
+    "program_id": "p2",
+    "author": "John Smith",
+    "title": "ช่วยแนะนำคอร์สเรียน Go Fiber หน่อยครับ",
+    "content": "พื้นฐานผมเขียน Express.js มาก่อน อยากลองย้ายมาเขียน Go",
+    "likes": 2,
+    "time": "1d ago",
+    "tags": ["Backend", "Go"],
+    "created_at": "2026-06-25T00:00:00Z"
+  }
+]

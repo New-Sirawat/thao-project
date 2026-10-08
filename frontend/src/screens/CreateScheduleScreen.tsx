@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, Alert,
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, CheckCircle, Calendar, Clock, MapPin, Users } from 'lucide-react-native';
 import { theme } from '../theme';
+import { API_BASE_URL } from '../lib/api';
 
 export default function CreateScheduleScreen() {
   const navigation = useNavigation();
@@ -21,7 +22,7 @@ export default function CreateScheduleScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://192.168.2.28:3000/api/schedules', {
+      const response = await fetch(`${API_BASE_URL}/api/schedules`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

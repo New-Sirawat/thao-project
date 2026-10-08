@@ -1,0 +1,1 @@
+const { createClient } = require('@supabase/supabase-js'); async function run() { const supabase = createClient('https://vescjjkwgkmjhbsgbvvt.supabase.co', 'sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y'); const { data } = await supabase.from('training_plans').select('id, title'); console.log(data); } run();

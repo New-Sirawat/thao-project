@@ -1,34 +1,61 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Platform, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, Platform, Modal, FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ArrowLeft, Calendar as CalendarIcon, FileText, Send, X } from 'lucide-react-native';
+import { ArrowLeft, Calendar as CalendarIcon, FileText, Send, X, Clock, Edit2, ChevronDown } from 'lucide-react-native';
 import { Calendar } from 'react-native-calendars';
 import { theme } from '../theme';
+import { AuthContext } from '../../App';
 import { supabase } from '../lib/supabase';
 
 export default function LeaveRequestScreen() {
   const navigation = useNavigation();
   const [leaveType, setLeaveType] = useState('Sick Leave');
-  const [isMultiDay, setIsMultiDay] = useState(false);
+  const [customLeaveType, setCustomLeaveType] = useState('');
   
-  // Format for react-native-calendars: YYYY-MM-DD
   const getToday = () => {
     const d = new Date();
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().split('T')[0];
   };
   
+  const [durationType, setDurationType] = useState<'1_day' | 'multi_day' | 'half_day' | 'intra_day'>('1_day');
+  const [halfDayPeriod, setHalfDayPeriod] = useState<'morning' | 'afternoon'>('morning');
+  
   const [startDate, setStartDate] = useState(getToday());
   const [endDate, setEndDate] = useState(getToday());
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('18:00');
+  
   const [showCalendar, setShowCalendar] = useState(false);
   const [pickingFor, setPickingFor] = useState<'start' | 'end'>('start');
+
+  // Dropdown States
+  const [showLeaveTypeModal, setShowLeaveTypeModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [pickingTimeFor, setPickingTimeFor] = useState<'start' | 'end'>('start');
+  
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
+  const { session } = React.useContext(AuthContext);
+
+  const timeOptions = [
+    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+    '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+    '17:00', '17:30', '18:00'
+  ];
+
+  const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
 
   const handleDayPress = (day: any) => {
     if (pickingFor === 'start') {
       setStartDate(day.dateString);
-      if (!isMultiDay) {
+      if (durationType !== 'multi_day') {
         setEndDate(day.dateString);
       } else if (day.dateString > endDate) {
         setEndDate(day.dateString);
@@ -39,7 +66,23 @@ export default function LeaveRequestScreen() {
     setShowCalendar(false);
   };
 
-  const leaveTypes = ['Sick Leave', 'Personal Leave', 'Vacation'];
+  const handleTimeSelect = (time: string) => {
+    if (pickingTimeFor === 'start') {
+      setStartTime(time);
+      // Automatically adjust end time if it's earlier than start time
+      if (time >= endTime) {
+        const nextIndex = timeOptions.indexOf(time) + 1;
+        if (nextIndex < timeOptions.length) {
+          setEndTime(timeOptions[nextIndex]);
+        }
+      }
+    } else {
+      setEndTime(time);
+    }
+    setShowTimeModal(false);
+  };
+
+  const leaveTypes = ['Sick Leave', 'Casual Leave', 'Annual Leave', 'Other'];
 
   const handleSubmit = async () => {
     if (!reason) {
@@ -47,92 +90,183 @@ export default function LeaveRequestScreen() {
       return;
     }
 
-    const finalEndDate = isMultiDay ? endDate : startDate;
+    if (leaveType === 'Other' && !customLeaveType) {
+      if (Platform.OS === 'web') window.alert('Missing Fields: Please specify your other leave type.');
+      else Alert.alert('Missing Fields', 'Please specify your other leave type.');
+      return;
+    }
+
+    // --- Validation: Past Dates ---
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selectedStartDate = new Date(startDate);
+    if (selectedStartDate < today) {
+      if (Platform.OS === 'web') window.alert('Invalid Date: Cannot select a date in the past.');
+      else Alert.alert('Invalid Date', 'Cannot select a date in the past.');
+      return;
+    }
+
+    // --- Validation: End Date < Start Date ---
+    if (durationType === 'multi_day') {
+      if (new Date(endDate) < selectedStartDate) {
+        if (Platform.OS === 'web') window.alert('Invalid Date: End date cannot be before start date.');
+        else Alert.alert('Invalid Date', 'End date cannot be before start date.');
+        return;
+      }
+    }
+
+    // --- Validation: End Time <= Start Time ---
+    if (durationType === 'intra_day') {
+      if (endTime <= startTime) {
+        if (Platform.OS === 'web') window.alert('Invalid Time: End time must be after start time.');
+        else Alert.alert('Invalid Time', 'End time must be after start time.');
+        return;
+      }
+    }
+
+    let finalEndDate = startDate;
+    let finalReason = reason;
+
+    // Append custom type to reason since DB Enum is strictly 'OTHER'
+    if (leaveType === 'Other') {
+      finalReason = `[Type: ${customLeaveType}] ` + finalReason;
+    }
+
+    if (durationType === 'multi_day') {
+      finalEndDate = endDate;
+    } else if (durationType === 'half_day') {
+      finalReason = finalReason + ` (Half Day: ${halfDayPeriod === 'morning' ? 'Morning' : 'Afternoon'})`;
+    } else if (durationType === 'intra_day') {
+      finalReason = finalReason + ` (Time: ${startTime} - ${endTime})`;
+    }
+
+    let dbType = 'OTHER';
+    if (leaveType === 'Sick Leave') dbType = 'SICK';
+    else if (leaveType === 'Casual Leave') dbType = 'CASUAL';
+    else if (leaveType === 'Annual Leave') dbType = 'ANNUAL';
 
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         Alert.alert('Error', 'You must be logged in.');
         setLoading(false);
         return;
       }
 
-      const response = await fetch('http://192.168.2.28:3000/api/leaves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: session.user.id,
-          leave_type: leaveType,
-          start_date: startDate,
-          end_date: isMultiDay ? endDate : startDate,
-          reason: reason,
-        }),
-      });
+      const newId = generateUUID();
+      const { error } = await supabase
+        .from('leave_requests')
+        .insert({
+          id: newId,
+          studentId: session.user.id,
+          type: dbType,
+          startDate: startDate,
+          endDate: finalEndDate,
+          reason: finalReason,
+          status: 'PENDING',
+          submittedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
 
-      if (response.ok) {
-        Alert.alert('Success', 'Your leave request has been submitted successfully.', [
-          { text: 'OK', onPress: () => navigation.navigate('LeaveStatus' as never) }
-        ]);
+      if (!error) {
+        // Send notification to Mentor
+        try {
+          const { data: mentorData } = await supabase
+            .from('users')
+            .select('id')
+            .eq('role', 'MENTOR')
+            .limit(1)
+            .single();
+            
+          if (mentorData) {
+            await supabase.from('notifications').insert({
+              id: generateUUID(),
+              userId: mentorData.id,
+              title: 'New Leave Request',
+              message: `A student has submitted a ${leaveType} request for ${startDate}.`,
+              type: 'info',
+              read: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch (notifErr) {
+          console.log('Failed to notify mentor', notifErr);
+        }
+
+        if (Platform.OS === 'web') {
+          window.alert('Leave Request Submitted: Please wait for approval');
+          navigation.navigate('LeaveStatus' as never);
+        } else {
+          Alert.alert('Leave Request Submitted', 'Please wait for approval', [
+            { text: 'OK', onPress: () => navigation.navigate('LeaveStatus' as never) }
+          ]);
+        }
       } else {
-        const result = await response.json();
-        Alert.alert('Submission Failed', result.error || 'Something went wrong.');
+        if (Platform.OS === 'web') {
+          window.alert('Submission Failed: ' + (error.message || 'Something went wrong.'));
+        } else {
+          Alert.alert('Submission Failed', error.message || 'Something went wrong.');
+        }
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Network Error', 'Could not connect to the server.');
+      if (Platform.OS === 'web') {
+        window.alert('Network Error: Could not connect to the server.');
+      } else {
+        Alert.alert('Network Error', 'Could not connect to the server.');
+      }
     }
     setLoading(false);
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <ArrowLeft color={theme.colors.surface} size={24} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Leave Request</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity style={styles.myRequestsBtn} onPress={() => navigation.navigate('LeaveStatus' as never)}>
+          <Clock color={theme.colors.surface} size={20} />
+          <Text style={styles.myRequestsText}>My Requests</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Leave Type Selector */}
-        <Text style={styles.sectionTitle}>Leave Type</Text>
-        <View style={styles.typeContainer}>
-          {leaveTypes.map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={[styles.typeButton, leaveType === type && styles.typeButtonActive]}
-              onPress={() => setLeaveType(type)}
-            >
-              <Text style={[styles.typeText, leaveType === type && styles.typeTextActive]}>{type}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Date Inputs */}
-        <Text style={styles.sectionTitle}>Duration</Text>
-        
-        {/* Toggle Duration */}
+        <Text style={styles.sectionTitle}>Duration Type</Text>
         <View style={styles.durationToggleContainer}>
           <TouchableOpacity 
-            style={[styles.durationToggle, !isMultiDay && styles.durationToggleActive]} 
-            onPress={() => {
-              setIsMultiDay(false);
-              setEndDate(startDate); // Sync dates
-            }}
+            style={[styles.durationToggle, durationType === '1_day' && styles.durationToggleActive]} 
+            onPress={() => { setDurationType('1_day'); setEndDate(startDate); }}
           >
-            <Text style={[styles.durationToggleText, !isMultiDay && styles.durationToggleTextActive]}>1 Day</Text>
+            <Text style={[styles.durationToggleText, durationType === '1_day' && styles.durationToggleTextActive]}>1 Day</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.durationToggle, isMultiDay && styles.durationToggleActive]} 
-            onPress={() => setIsMultiDay(true)}
+            style={[styles.durationToggle, durationType === 'multi_day' && styles.durationToggleActive]} 
+            onPress={() => setDurationType('multi_day')}
           >
-            <Text style={[styles.durationToggleText, isMultiDay && styles.durationToggleTextActive]}>Multiple Days</Text>
+            <Text style={[styles.durationToggleText, durationType === 'multi_day' && styles.durationToggleTextActive]}>Multi-day</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={[styles.durationToggleContainer, { marginTop: 10 }]}>
+          <TouchableOpacity 
+            style={[styles.durationToggle, durationType === 'half_day' && styles.durationToggleActive]} 
+            onPress={() => { setDurationType('half_day'); setEndDate(startDate); }}
+          >
+            <Text style={[styles.durationToggleText, durationType === 'half_day' && styles.durationToggleTextActive]}>Half Day</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.durationToggle, durationType === 'intra_day' && styles.durationToggleActive]} 
+            onPress={() => { setDurationType('intra_day'); setEndDate(startDate); }}
+          >
+            <Text style={[styles.durationToggleText, durationType === 'intra_day' && styles.durationToggleTextActive]}>During the Day</Text>
           </TouchableOpacity>
         </View>
 
+        <Text style={styles.sectionTitle}>Date & Time</Text>
+        
+        {/* Date Row */}
         <View style={styles.row}>
           <TouchableOpacity 
             style={styles.inputContainerRow} 
@@ -145,11 +279,12 @@ export default function LeaveRequestScreen() {
               <CalendarIcon color={theme.colors.textSecondary} size={20} />
             </View>
             <Text style={[styles.inputField, { lineHeight: 50 }]}>{startDate}</Text>
+            <ChevronDown color={theme.colors.border} size={20} style={{ marginRight: 15 }} />
           </TouchableOpacity>
 
-          {isMultiDay && (
+          {durationType === 'multi_day' && (
             <>
-              <View style={{ width: 10, justifyContent: 'center', alignItems: 'center' }}>
+              <View style={{ width: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
                 <Text style={{ color: theme.colors.textSecondary }}>-</Text>
               </View>
               <TouchableOpacity 
@@ -163,12 +298,50 @@ export default function LeaveRequestScreen() {
                   <CalendarIcon color={theme.colors.textSecondary} size={20} />
                 </View>
                 <Text style={[styles.inputField, { lineHeight: 50 }]}>{endDate}</Text>
+                <ChevronDown color={theme.colors.border} size={20} style={{ marginRight: 15 }} />
               </TouchableOpacity>
             </>
           )}
         </View>
 
-        {/* Custom Calendar Modal */}
+        {/* Intra-day Time Row */}
+        {durationType === 'intra_day' && (
+          <View style={styles.row}>
+            <TouchableOpacity 
+              style={styles.inputContainerRow}
+              onPress={() => {
+                setPickingTimeFor('start');
+                setShowTimeModal(true);
+              }}
+            >
+              <View style={styles.inputIconWrapper}>
+                <Clock color={theme.colors.textSecondary} size={20} />
+              </View>
+              <Text style={[styles.inputField, { lineHeight: 50 }]}>{startTime}</Text>
+              <ChevronDown color={theme.colors.border} size={20} style={{ marginRight: 15 }} />
+            </TouchableOpacity>
+
+            <View style={{ width: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ color: theme.colors.textSecondary }}>-</Text>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.inputContainerRow}
+              onPress={() => {
+                setPickingTimeFor('end');
+                setShowTimeModal(true);
+              }}
+            >
+              <View style={styles.inputIconWrapper}>
+                <Clock color={theme.colors.textSecondary} size={20} />
+              </View>
+              <Text style={[styles.inputField, { lineHeight: 50 }]}>{endTime}</Text>
+              <ChevronDown color={theme.colors.border} size={20} style={{ marginRight: 15 }} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Date Picker Modal */}
         <Modal
           visible={showCalendar}
           transparent={true}
@@ -178,9 +351,7 @@ export default function LeaveRequestScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  Select {pickingFor === 'start' ? 'Start Date' : 'End Date'}
-                </Text>
+                <Text style={styles.modalTitle}>Select {pickingFor === 'start' ? 'Start Date' : 'End Date'}</Text>
                 <TouchableOpacity onPress={() => setShowCalendar(false)}>
                   <X color={theme.colors.textSecondary} size={24} />
                 </TouchableOpacity>
@@ -202,50 +373,164 @@ export default function LeaveRequestScreen() {
           </View>
         </Modal>
 
-        {/* Reason Input */}
-        <Text style={styles.sectionTitle}>Reason for Leave</Text>
-        <View style={[styles.inputContainer, styles.textAreaContainer]}>
-          <View style={[styles.inputIconWrapper, { alignItems: 'flex-start', paddingTop: 12 }]}>
+        {/* Leave Type Modal */}
+        <Modal
+          visible={showLeaveTypeModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowLeaveTypeModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Leave Type</Text>
+                <TouchableOpacity onPress={() => setShowLeaveTypeModal(false)}>
+                  <X color={theme.colors.textSecondary} size={24} />
+                </TouchableOpacity>
+              </View>
+              <View style={{ paddingVertical: 10 }}>
+                {leaveTypes.map((type) => (
+                  <TouchableOpacity 
+                    key={type} 
+                    style={[
+                      styles.timeOptionItem, 
+                      leaveType === type && styles.timeOptionItemActive
+                    ]}
+                    onPress={() => {
+                      setLeaveType(type);
+                      setShowLeaveTypeModal(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.timeOptionText,
+                      leaveType === type && styles.timeOptionTextActive
+                    ]}>{type}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Time Picker Modal */}
+        <Modal
+          visible={showTimeModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowTimeModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select {pickingTimeFor === 'start' ? 'Start Time' : 'End Time'}</Text>
+                <TouchableOpacity onPress={() => setShowTimeModal(false)}>
+                  <X color={theme.colors.textSecondary} size={24} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: 300 }}>
+                {timeOptions.map((time) => (
+                  <TouchableOpacity 
+                    key={time} 
+                    style={[
+                      styles.timeOptionItem, 
+                      ((pickingTimeFor === 'start' && startTime === time) || (pickingTimeFor === 'end' && endTime === time)) && styles.timeOptionItemActive
+                    ]}
+                    onPress={() => handleTimeSelect(time)}
+                  >
+                    <Text style={[
+                      styles.timeOptionText,
+                      ((pickingTimeFor === 'start' && startTime === time) || (pickingTimeFor === 'end' && endTime === time)) && styles.timeOptionTextActive
+                    ]}>{time}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Half-day Period Row */}
+        {durationType === 'half_day' && (
+          <View style={styles.durationToggleContainer}>
+            <TouchableOpacity 
+              style={[styles.durationToggle, halfDayPeriod === 'morning' && styles.durationToggleActive]} 
+              onPress={() => setHalfDayPeriod('morning')}
+            >
+              <Text style={[styles.durationToggleText, halfDayPeriod === 'morning' && styles.durationToggleTextActive]}>Morning (08:00 - 12:00)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.durationToggle, halfDayPeriod === 'afternoon' && styles.durationToggleActive]} 
+              onPress={() => setHalfDayPeriod('afternoon')}
+            >
+              <Text style={[styles.durationToggleText, halfDayPeriod === 'afternoon' && styles.durationToggleTextActive]}>Afternoon (13:30 - 15:30)</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <Text style={styles.sectionTitle}>Leave Type</Text>
+        <TouchableOpacity 
+          style={styles.inputContainerRow}
+          onPress={() => setShowLeaveTypeModal(true)}
+        >
+          <View style={styles.inputIconWrapper}>
+            <FileText color={theme.colors.textSecondary} size={20} />
+          </View>
+          <Text style={[styles.inputField, { lineHeight: 50, color: leaveType ? theme.colors.text : theme.colors.textSecondary }]}>
+            {leaveType}
+          </Text>
+          <ChevronDown color={theme.colors.border} size={20} style={{ marginRight: 15 }} />
+        </TouchableOpacity>
+
+        {leaveType === 'Other' && (
+          <View style={styles.inputContainer}>
+            <View style={styles.inputIconWrapper}>
+              <Edit2 color={theme.colors.textSecondary} size={20} />
+            </View>
+            <TextInput
+              style={styles.inputField}
+              placeholder="Specify Leave Type (e.g. Funeral)"
+              value={customLeaveType}
+              onChangeText={setCustomLeaveType}
+              placeholderTextColor={theme.colors.textSecondary}
+            />
+          </View>
+        )}
+
+        <Text style={styles.sectionTitle}>Reason</Text>
+        <View style={styles.inputContainer}>
+          <View style={[styles.inputIconWrapper, { top: 15 }]}>
             <FileText color={theme.colors.textSecondary} size={20} />
           </View>
           <TextInput
-            style={styles.textArea}
-            placeholder="Please provide a brief reason..."
-            value={reason}
-            onChangeText={setReason}
+            style={[styles.inputField, styles.textArea]}
+            placeholder="Please provide details for your leave..."
             multiline
             numberOfLines={4}
             textAlignVertical="top"
+            value={reason}
+            onChangeText={setReason}
+            placeholderTextColor={theme.colors.textSecondary}
           />
         </View>
+      </ScrollView>
 
-        {/* Submit Button */}
+      <View style={styles.bottomBar}>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={loading}>
           {loading ? (
             <ActivityIndicator color={theme.colors.surface} />
           ) : (
             <>
-              <Send color={theme.colors.surface} size={20} style={{ marginRight: 8 }} />
+              <Send color={theme.colors.surface} size={20} />
               <Text style={styles.submitButtonText}>Submit Request</Text>
             </>
           )}
         </TouchableOpacity>
-        
-        {/* Status Link */}
-        <TouchableOpacity style={styles.statusLink} onPress={() => navigation.navigate('LeaveStatus' as never)}>
-          <Text style={styles.statusLinkText}>View Request Status ➔</Text>
-        </TouchableOpacity>
-
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     backgroundColor: theme.colors.primary,
     paddingTop: 60,
@@ -254,70 +539,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
     ...theme.shadows.medium,
   },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 20,
-    color: theme.colors.surface,
-  },
-  content: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 16,
-    color: theme.colors.text,
-    marginBottom: 12,
-    marginTop: 10,
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
-  },
+  backButton: { padding: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 },
+  headerTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 18, color: theme.colors.surface },
+  myRequestsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
+  myRequestsText: { color: theme.colors.surface, fontFamily: theme.typography.fontFamilySemiBold, fontSize: 12, marginLeft: 4 },
+  content: { padding: 20, paddingBottom: 100 },
+  sectionTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 16, color: theme.colors.text, marginBottom: 15, marginTop: 10 },
+  typeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   typeButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: theme.colors.surface,
-    borderRadius: 20,
+    borderRadius: 9999,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
-  typeButtonActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  typeText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  typeTextActive: {
-    color: theme.colors.surface,
-  },
+  typeButtonActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  typeText: { fontFamily: theme.typography.fontFamilySemiBold, fontSize: 14, color: theme.colors.textSecondary },
+  typeTextActive: { color: theme.colors.surface },
+  
   durationToggleContainer: {
     flexDirection: 'row',
-    marginBottom: 15,
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.md,
     padding: 4,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   durationToggle: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: theme.borderRadius.md - 4,
+    borderRadius: theme.borderRadius.sm,
   },
   durationToggleActive: {
-    backgroundColor: theme.colors.surface,
-    ...theme.shadows.subtle,
+    backgroundColor: theme.colors.primary + '15',
   },
   durationToggleText: {
     fontFamily: theme.typography.fontFamilySemiBold,
@@ -327,10 +588,8 @@ const styles = StyleSheet.create({
   durationToggleTextActive: {
     color: theme.colors.primary,
   },
-  row: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
+  
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
   inputContainerRow: {
     flex: 1,
     flexDirection: 'row',
@@ -339,85 +598,57 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    paddingHorizontal: 10,
+    height: 50,
+    marginBottom: 20,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    paddingHorizontal: 15,
     marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  textAreaContainer: {
-    height: 120,
-    alignItems: 'flex-start',
-  },
-  inputIconWrapper: {
-    marginRight: 10,
-  },
+  inputIconWrapper: { position: 'absolute', left: 15, zIndex: 1 },
   inputField: {
     flex: 1,
+    fontFamily: theme.typography.fontFamily,
+    fontSize: 16,
+    color: theme.colors.text,
+    paddingLeft: 45,
+    paddingRight: 15,
     height: 50,
-    fontFamily: theme.typography.fontFamily,
-    fontSize: 14,
-    color: theme.colors.text,
   },
-  textArea: {
-    flex: 1,
-    fontFamily: theme.typography.fontFamily,
-    fontSize: 14,
-    color: theme.colors.text,
-    paddingTop: 12,
+  textArea: { paddingVertical: 15, height: 120 },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: theme.colors.surface,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    ...theme.shadows.medium,
   },
   submitButton: {
     backgroundColor: theme.colors.primary,
     flexDirection: 'row',
-    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
     borderRadius: theme.borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-    ...theme.shadows.medium,
+    gap: 10,
   },
-  submitButtonText: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 16,
-    color: theme.colors.surface,
-  },
-  statusLink: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  statusLinkText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
-    fontSize: 14,
-    color: theme.colors.primary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: 20,
-    width: '90%',
-    ...theme.shadows.medium,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  modalTitle: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 18,
-    color: theme.colors.text,
-  },
+  submitButtonText: { fontFamily: theme.typography.fontFamilyBold, fontSize: 16, color: theme.colors.surface },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, overflow: 'hidden' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  modalTitle: { fontFamily: theme.typography.fontFamilyBold, fontSize: 18, color: theme.colors.text },
+  timeOptionItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: theme.colors.border, alignItems: 'center' },
+  timeOptionItemActive: { backgroundColor: theme.colors.primary + '15' },
+  timeOptionText: { fontFamily: theme.typography.fontFamily, fontSize: 16, color: theme.colors.text },
+  timeOptionTextActive: { fontFamily: theme.typography.fontFamilyBold, color: theme.colors.primary },
 });

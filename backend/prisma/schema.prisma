@@ -1,0 +1,157 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ========================================================
+// Users & Roles (Custom Auth)
+// ========================================================
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String   // For custom Auth (NestJS style)
+  name          String
+  role          String   @default("Student") // "Student", "Mentor", "Admin"
+  phone         String?
+  avatar_url    String?
+  company_id    String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  company         Company?       @relation(fields: [company_id], references: [id])
+  leave_requests  LeaveRequest[]
+  attendances     Attendance[]
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+
+  users       User[]
+
+  @@map("companies")
+}
+
+// ========================================================
+// Attendance & Leaves
+// ========================================================
+
+model Attendance {
+  id             String    @id @default(uuid())
+  user_id        String
+  date           DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  check_in_time  DateTime?
+  check_out_time DateTime?
+  status         String    @default("present") // "present", "absent", "leave"
+  location_lat   Float?
+  location_lng   Float?
+  
+  user           User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("attendances")
+}
+
+model LeaveRequest {
+  id          String   @id @default(uuid())
+  user_id     String
+  type        String   // "sick", "vacation", "personal"
+  start_date  DateTime
+  end_date    DateTime
+  reason      String
+  status      String   @default("pending") // "pending", "approved", "rejected"
+  created_at  DateTime @default(now())
+
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("leave_requests")
+}
+
+// ========================================================
+// Training & Courses
+// ========================================================
+
+model TrainingProgram {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  progress    Int      @default(0)
+  image_url   String?
+  pdf_url     String?
+  video_url   String?
+  created_at  DateTime @default(now())
+
+  // Relations
+  syllabus    TrainingSyllabus[]
+
+  @@map("training_programs")
+}
+
+model TrainingSyllabus {
+  id               String   @id @default(uuid())
+  training_id      String
+  title            String
+  completed        Boolean  @default(false)
+
+  training_program TrainingProgram @relation(fields: [training_id], references: [id], onDelete: Cascade)
+
+  @@map("training_syllabus")
+}
+
+// ========================================================
+// Scheduling & Meetings
+// ========================================================
+
+model Schedule {
+  id          String   @id @default(uuid())
+  title       String
+  time_start  DateTime
+  time_end    DateTime
+  location    String
+  type        String   // "workshop", "meeting", "review"
+  created_at  DateTime @default(now())
+
+  @@map("schedules")
+}
+
+// ========================================================
+// Notifications & Announcements
+// ========================================================
+
+model Notification {
+  id          String   @id @default(uuid())
+  user_id     String
+  title       String
+  description String
+  type        String   @default("info") // "success", "info", "warning"
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Announcement {
+  id           String   @id @default(uuid())
+  title        String
+  content      String
+  author       String
+  is_important Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  @@map("announcements")
+}

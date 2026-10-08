@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Bell, CheckCircle, Info, AlertTriangle } from 'lucide-react-native';
+import { AuthContext } from '../../App';
+import { supabase } from '../lib/supabase';
 import { theme } from '../theme';
 
 interface Notification {
@@ -53,17 +55,48 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const { session } = React.useContext(AuthContext);
+
   useEffect(() => {
-    fetch('http://192.168.2.28:3000/api/notifications')
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === 'success') {
-          setNotifications(data.data);
-        }
-      })
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
-  }, []);
+    fetchNotifications();
+  }, [session]);
+
+  const fetchNotifications = async () => {
+    if (!session) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('userId', session.user.id)
+        .order('createdAt', { ascending: false });
+
+      if (error) {
+        console.error(error);
+      } else if (data) {
+        const formatted = data.map(item => {
+          const createdAtStr = item.createdAt.endsWith('Z') ? item.createdAt : item.createdAt + 'Z';
+          const dateObj = new Date(createdAtStr);
+          return {
+            id: item.id,
+            title: item.title,
+            description: item.message,
+            time: dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            type: item.type ? item.type.toLowerCase() : 'info',
+            read: item.read
+          };
+        });
+        setNotifications(formatted as any);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -93,7 +126,20 @@ export default function NotificationsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
         renderItem={({ item }) => (
-          <TouchableOpacity style={[styles.card, !item.read && styles.unreadCard]}>
+          <TouchableOpacity 
+            style={[styles.card, !item.read && styles.unreadCard]}
+            onPress={async () => {
+              if (!item.read) {
+                const { error } = await supabase
+                  .from('notifications')
+                  .update({ read: true })
+                  .eq('id', item.id);
+                if (!error) {
+                  setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+                }
+              }
+            }}
+          >
             <View style={styles.iconWrapper}>
               {getIcon(item.type)}
             </View>

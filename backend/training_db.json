@@ -1,0 +1,53 @@
+[
+  {
+    "description": "For gentle",
+    "id": "e86e53c3-43c1-48cd-8262-bffb211e15e0",
+    "image_url": "https://reactnative.dev/img/logo-og.png",
+    "pdf_url": "",
+    "progress": 0,
+    "title": "Boom Boom2",
+    "video_url": ""
+  },
+  {
+    "description": "For gentle",
+    "id": "1bd124c9-6d0f-4422-a974-4a045f52dccf",
+    "image_url": "https://reactnative.dev/img/logo-og.png",
+    "pdf_url": "",
+    "progress": 0,
+    "title": "Boom Boom",
+    "video_url": ""
+  },
+  {
+    "description": "For gentle",
+    "id": "a98b4b0a-84b6-42bf-8cca-ab85b9e23a5b",
+    "image_url": "https://reactnative.dev/img/logo-og.png",
+    "pdf_url": "",
+    "progress": 0,
+    "title": "Boom Boom",
+    "video_url": ""
+  },
+  {
+    "description": "Learn to build mobile apps",
+    "id": "1",
+    "image_url": "https://reactnative.dev/img/logo-og.png",
+    "progress": 75,
+    "syllabus": [
+      {
+        "completed": true,
+        "id": "1",
+        "title": "Introduction to React Native"
+      },
+      {
+        "completed": true,
+        "id": "2",
+        "title": "Navigation \u0026 Routing"
+      },
+      {
+        "completed": false,
+        "id": "3",
+        "title": "State Management"
+      }
+    ],
+    "title": "React Native Masterclass"
+  }
+]

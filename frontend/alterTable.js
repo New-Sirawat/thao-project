@@ -1,0 +1,1 @@
+const { createClient } = require('@supabase/supabase-js'); async function run() { const supabase = createClient('https://vescjjkwgkmjhbsgbvvt.supabase.co', 'sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y'); console.log('This key is anon, cannot run ALTER TABLE via REST.'); } run();

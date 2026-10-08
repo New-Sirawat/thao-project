@@ -10,6 +10,10 @@ export const theme = {
     destructiveText: '#FF3B30', // Red text
     success: '#10B981',      // Green
     warning: '#F59E0B',      // Yellow
+    eventToday: '#FF8C00',
+    eventTomorrow: '#3B82F6',
+    eventFuture: '#10B981',
+    quickAccessBg: '#FFF3E0', // Light pastel orange
   },
   typography: {
     fontFamily: 'Inter_400Regular',

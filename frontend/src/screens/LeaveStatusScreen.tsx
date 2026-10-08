@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator }
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Calendar, Clock, CheckCircle, AlertCircle, HelpCircle } from 'lucide-react-native';
 import { theme } from '../theme';
+import { AuthContext } from '../../App';
 import { supabase } from '../lib/supabase';
 
 interface LeaveRecord {
@@ -12,31 +13,61 @@ interface LeaveRecord {
   end_date: string;
   reason: string;
   status: string;
+  rejectionReason?: string;
 }
 
 export default function LeaveStatusScreen() {
   const navigation = useNavigation();
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
+  const [filter, setFilter] = useState<'All' | 'Pending' | 'History'>('All');
   const [loading, setLoading] = useState(true);
+  const { session } = React.useContext(AuthContext);
 
   useEffect(() => {
     fetchLeaves();
-  }, []);
+    
+    if (session?.user?.id) {
+      const channel = supabase
+        .channel('leave-status-updates')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'leave_requests', filter: `studentId=eq.${session.user.id}` },
+          () => {
+            fetchLeaves();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [session]);
 
   const fetchLeaves = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://192.168.2.28:3000/api/leaves?user_id=${session.user.id}`);
-      const result = await response.json();
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('studentId', session.user.id)
+        .order('startDate', { ascending: false });
 
-      if (response.ok && result.data) {
-        // Sort by start_date descending
-        const sortedData = result.data.sort((a: LeaveRecord, b: LeaveRecord) => {
-          return new Date(b.start_date).getTime() - new Date(a.start_date).getTime();
-        });
-        setLeaves(sortedData);
+      if (error) {
+        console.error('Error fetching leaves:', error);
+      } else if (data) {
+        // Map data to match the UI interface if necessary
+        const mappedData = data.map(item => ({
+          id: item.id,
+          leave_type: item.type,
+          start_date: item.startDate,
+          end_date: item.endDate,
+          reason: item.reason,
+          status: item.status,
+          rejectionReason: item.approverNote
+        }));
+        setLeaves(mappedData);
       }
     } catch (error) {
       console.error('Error fetching leaves:', error);
@@ -50,11 +81,11 @@ export default function LeaveStatusScreen() {
     let textColor = '#E65100';
     let Icon = Clock;
 
-    if (status === 'Approved') {
+    if (status.toUpperCase() === 'APPROVED') {
       bgColor = '#E8F5E9';
       textColor = theme.colors.success;
       Icon = CheckCircle;
-    } else if (status === 'Rejected') {
+    } else if (status.toUpperCase() === 'REJECTED') {
       bgColor = theme.colors.destructive;
       textColor = theme.colors.destructiveText;
       Icon = AlertCircle;
@@ -87,15 +118,50 @@ export default function LeaveStatusScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {leaves.length === 0 ? (
-        <View style={styles.emptyState}>
-          <HelpCircle color={theme.colors.border} size={64} />
-          <Text style={styles.emptyStateTitle}>No Requests</Text>
-          <Text style={styles.emptyStateText}>You haven't submitted any leave requests yet.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={leaves}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity 
+          style={[styles.filterBtn, filter === 'All' && styles.filterBtnActive]}
+          onPress={() => setFilter('All')}
+        >
+          <Text style={[styles.filterText, filter === 'All' && styles.filterTextActive]}>All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.filterBtn, filter === 'Pending' && styles.filterBtnActive]}
+          onPress={() => setFilter('Pending')}
+        >
+          <Text style={[styles.filterText, filter === 'Pending' && styles.filterTextActive]}>Pending</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.filterBtn, filter === 'History' && styles.filterBtnActive]}
+          onPress={() => setFilter('History')}
+        >
+          <Text style={[styles.filterText, filter === 'History' && styles.filterTextActive]}>History</Text>
+        </TouchableOpacity>
+      </View>
+
+      {(() => {
+        const filteredLeaves = leaves.filter(item => {
+          if (filter === 'All') return true;
+          if (filter === 'Pending') return item.status === 'PENDING';
+          if (filter === 'History') return item.status !== 'PENDING';
+          return true;
+        });
+
+        if (filteredLeaves.length === 0) {
+          return (
+            <View style={styles.emptyState}>
+              <HelpCircle color={theme.colors.border} size={64} />
+              <Text style={styles.emptyStateTitle}>No Requests</Text>
+              <Text style={styles.emptyStateText}>
+                {filter === 'All' ? "You haven't submitted any leave requests yet." : `No ${filter.toLowerCase()} requests found.`}
+              </Text>
+            </View>
+          );
+        }
+
+        return (
+          <FlatList
+            data={filteredLeaves}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
           renderItem={({ item }) => (
@@ -116,10 +182,18 @@ export default function LeaveStatusScreen() {
                 <Text style={styles.reasonLabel}>Reason:</Text>
                 <Text style={styles.reasonText}>{item.reason}</Text>
               </View>
+              
+              {item.status === 'REJECTED' && item.rejectionReason && (
+                <View style={[styles.reasonContainer, { backgroundColor: '#FEE2E2', marginTop: 10 }]}>
+                  <Text style={[styles.reasonLabel, { color: '#B91C1C' }]}>Rejection Reason:</Text>
+                  <Text style={[styles.reasonText, { color: '#B91C1C' }]}>{item.rejectionReason}</Text>
+                </View>
+              )}
             </View>
           )}
         />
-      )}
+        );
+      })()}
     </View>
   );
 }
@@ -151,6 +225,33 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: theme.typography.fontFamilyBold,
     fontSize: 20,
+    color: theme.colors.surface,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  filterBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 20,
+    marginHorizontal: 5,
+    backgroundColor: theme.colors.background,
+  },
+  filterBtnActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  filterText: {
+    fontFamily: theme.typography.fontFamilySemiBold,
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+  },
+  filterTextActive: {
     color: theme.colors.surface,
   },
   listContainer: {

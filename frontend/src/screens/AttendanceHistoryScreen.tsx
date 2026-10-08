@@ -3,7 +3,8 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator }
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Calendar, Clock, CheckCircle, AlertCircle } from 'lucide-react-native';
 import { theme } from '../theme';
-import { supabase } from '../lib/supabase';
+import { AuthContext } from '../../App';
+import { API_BASE_URL } from '../lib/api';
 
 interface AttendanceRecord {
   id: string;
@@ -17,6 +18,7 @@ export default function AttendanceHistoryScreen() {
   const navigation = useNavigation();
   const [history, setHistory] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = React.useContext(AuthContext);
 
   useEffect(() => {
     fetchHistory();
@@ -24,10 +26,13 @@ export default function AttendanceHistoryScreen() {
 
   const fetchHistory = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://192.168.2.28:3000/api/attendance/history?user_id=${session.user.id}`);
+      const response = await fetch(`${API_BASE_URL}/api/attendance/history?user_id=${session.user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
       const result = await response.json();
 
       if (response.ok && result.data) {

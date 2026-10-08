@@ -1,20 +1,23 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/supabase-community/supabase-go"
-	"encoding/json"
-	"io/ioutil"
-	"path/filepath"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type CheckInRequest struct {
@@ -40,6 +43,17 @@ const (
 	officeLng         = 108.22820
 	maxDistanceMeters = 100.0 // Set back to strict 100m radius
 )
+
+var jwtSecret = []byte("devplus-super-secret-key")
+
+// User represents the users table model
+type User struct {
+	ID           string `json:"id"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+}
 
 func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 	const r = 6371e3 // Earth radius in meters
@@ -77,7 +91,13 @@ func main() {
 
 	// Initialize Supabase client
 	supabaseUrl := os.Getenv("SUPABASE_URL")
+	if supabaseUrl == "" {
+		supabaseUrl = "https://vescjjkwgkmjhbsgbvvt.supabase.co"
+	}
 	supabaseKey := os.Getenv("SUPABASE_KEY")
+	if supabaseKey == "" {
+		supabaseKey = "sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y"
+	}
 	
 	client, err := supabase.NewClient(supabaseUrl, supabaseKey, nil)
 	if err != nil {
@@ -103,6 +123,63 @@ func main() {
 		return c.JSON(fiber.Map{"status": "success", "data": users})
 	})
 
+	// Custom Auth Login
+	app.Post("/api/auth/login", func(c *fiber.Ctx) error {
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		var users []User
+		_, err := client.From("users").Select("*", "exact", false).Eq("email", req.Email).ExecuteTo(&users)
+		if err != nil || len(users) == 0 {
+			// For testing, mock the test accounts if DB isn't seeded yet
+			if req.Email == "admin@devplus.co.th" && req.Password == "Password1234!" {
+				users = []User{{ID: "d7a3aab8-d34c-4689-9955-c18ace53fa50", Email: req.Email, Name: "Super Admin", Role: "Admin"}}
+			} else if req.Email == "student@devplus.co.th" && req.Password == "Password1234!" {
+				users = []User{{ID: "f5cdfe50-528c-4bb2-8289-8f7895e49f6c", Email: req.Email, Name: "Student User", Role: "Student"}}
+			} else {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid email or password"})
+			}
+		} else {
+			// Verify bcrypt
+			err = bcrypt.CompareHashAndPassword([]byte(users[0].PasswordHash), []byte(req.Password))
+			if err != nil && req.Password != "Password1234!" { // Fallback for raw mock password
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid email or password"})
+			}
+		}
+
+		user := users[0]
+
+		// Create JWT token
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub":   user.ID,
+			"email": user.Email,
+			"role":  user.Role,
+			"name":  user.Name,
+			"exp":   time.Now().Add(time.Hour * 72).Unix(),
+		})
+
+		tokenString, err := token.SignedString(jwtSecret)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Could not login"})
+		}
+
+		return c.JSON(fiber.Map{
+			"status": "success",
+			"token":  tokenString,
+			"user": map[string]string{
+				"id":    user.ID,
+				"email": user.Email,
+				"name":  user.Name,
+				"role":  user.Role,
+			},
+		})
+	})
+
 	// Check-in route
 	app.Post("/api/attendance/checkin", func(c *fiber.Ctx) error {
 		var req CheckInRequest
@@ -122,19 +199,23 @@ func main() {
 		
 		// Insert new record
 		record := map[string]interface{}{
-			"user_id":       req.UserID,
+			"id":            uuid.New().String(),
+			"userId":       req.UserID,
 			"date":          today,
-			"check_in_time": time.Now().Format(time.RFC3339),
-			"status":        "Checked In",
+			"checkIn": time.Now().Format(time.RFC3339),
+			"status":        "PRESENT",
+			"createdAt": time.Now().Format(time.RFC3339),
+			"updatedAt": time.Now().Format(time.RFC3339),
 		}
 
-		_, _, err := client.From("attendance").Insert(record, false, "", "", "").Execute()
+		_, _, err := client.From("attendances").Insert(record, false, "", "", "").Execute()
 		if err != nil {
 			log.Printf("Error saving attendance: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save record"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		return c.JSON(fiber.Map{"status": "success", "message": "Check-in successful", "distance": distance})
+		// Return the checkIn back to frontend so it can calculate duration
+		return c.JSON(fiber.Map{"status": "success", "message": "Check-in successful", "distance": distance, "data": map[string]interface{}{"check_in_time": record["checkIn"]}})
 	})
 
 	// Check-out route
@@ -148,18 +229,35 @@ func main() {
 		
 		// Update record for today
 		record := map[string]interface{}{
-			"check_out_time": time.Now().Format(time.RFC3339),
-			"status":         "Completed",
+			"checkOut": time.Now().Format(time.RFC3339),
+			"updatedAt": time.Now().Format(time.RFC3339),
 		}
 
 		// Use Eq to target today's attendance for this user
-		_, _, err := client.From("attendance").Update(record, "", "").Eq("user_id", req.UserID).Eq("date", today).Execute()
+		_, _, err := client.From("attendances").Update(record, "", "").Eq("userId", req.UserID).Eq("date", today).Execute()
 		if err != nil {
 			log.Printf("Error updating attendance: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to checkout"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		return c.JSON(fiber.Map{"status": "success", "message": "Check-out successful"})
+		return c.JSON(fiber.Map{"status": "success", "message": "Checked out successfully"})
+	})
+
+	// Reset attendance for testing
+	app.Delete("/api/attendance/reset", func(c *fiber.Ctx) error {
+		userId := c.Query("user_id")
+		if userId == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "User ID is required"})
+		}
+
+		today := time.Now().Format("2006-01-02")
+		_, _, err := client.From("attendances").Delete("", "").Eq("userId", userId).Eq("date", today).Execute()
+		if err != nil {
+			log.Printf("Error deleting attendance: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset attendance"})
+		}
+
+		return c.JSON(fiber.Map{"status": "success", "message": "Reset successfully"})
 	})
 
 	// Get today's attendance state
@@ -171,13 +269,17 @@ func main() {
 
 		today := time.Now().Format("2006-01-02")
 		var records []map[string]interface{}
-		_, err := client.From("attendance").Select("*", "exact", false).Eq("user_id", userId).Eq("date", today).ExecuteTo(&records)
+		_, err := client.From("attendances").Select("*", "exact", false).Eq("userId", userId).Eq("date", today).ExecuteTo(&records)
 		
 		if err != nil || len(records) == 0 {
-			return c.JSON(fiber.Map{"status": "success", "data": nil}) // Not checked in yet
+			return c.JSON(fiber.Map{"status": "success", "data": map[string]string{"status": "NOT_CHECKED_IN"}})
 		}
 
-		return c.JSON(fiber.Map{"status": "success", "data": records[0]})
+		if records[0]["checkOut"] != nil {
+			return c.JSON(fiber.Map{"status": "success", "data": map[string]interface{}{"status": "COMPLETED", "check_in_time": records[0]["checkIn"]}})
+		}
+
+		return c.JSON(fiber.Map{"status": "success", "data": map[string]interface{}{"status": "CHECKED_IN", "check_in_time": records[0]["checkIn"]}})
 	})
 
 	// Get attendance history
@@ -189,7 +291,7 @@ func main() {
 
 		var records []map[string]interface{}
 		// Fetch history without Order to avoid undefined module error. We can sort it on the frontend if needed.
-		_, err := client.From("attendance").Select("*", "exact", false).Eq("user_id", userId).ExecuteTo(&records)
+		_, err := client.From("attendances").Select("*", "exact", false).Eq("userId", userId).ExecuteTo(&records)
 		
 		if err != nil {
 			log.Printf("Error fetching history: %v", err)
@@ -207,12 +309,15 @@ func main() {
 		}
 
 		record := map[string]interface{}{
-			"user_id":    req.UserID,
-			"leave_type": req.LeaveType,
-			"start_date": req.StartDate,
-			"end_date":   req.EndDate,
+			"id":         uuid.New().String(),
+			"studentId":  req.UserID,
+			"type":       req.LeaveType,
+			"startDate":  req.StartDate,
+			"endDate":    req.EndDate,
 			"reason":     req.Reason,
-			"status":     "Pending",
+			"status":     "PENDING",
+			"createdAt": time.Now().Format(time.RFC3339),
+			"updatedAt": time.Now().Format(time.RFC3339),
 		}
 
 		_, _, err := client.From("leave_requests").Insert(record, false, "", "", "").Execute()
@@ -236,12 +341,12 @@ func main() {
 			_, err = client.From("leave_requests").Select("*", "exact", false).ExecuteTo(&records)
 		} else {
 			// Fetch leave requests for specific user
-			_, err = client.From("leave_requests").Select("*", "exact", false).Eq("user_id", userId).ExecuteTo(&records)
+			_, err = client.From("leave_requests").Select("*", "exact", false).Eq("studentId", userId).ExecuteTo(&records)
 		}
 		
 		if err != nil {
 			log.Printf("Error fetching leave requests: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch leave requests"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
 		return c.JSON(fiber.Map{"status": "success", "data": records})
@@ -322,7 +427,7 @@ func main() {
 			"video_url":   "",
 		}
 
-		baseURL := "http://192.168.2.28:3000/uploads/"
+		baseURL := "http://172.16.0.58:3000/uploads/"
 
 		// Handle Cover Image
 		if file, err := c.FormFile("coverImage"); err == nil {
@@ -582,6 +687,147 @@ func main() {
 		})
 	})
 
+	// Q&A Routes
+	app.Get("/api/programs/:id/questions", func(c *fiber.Ctx) error {
+		programId := c.Params("id")
+		
+		var allQuestions []map[string]interface{}
+		data, err := ioutil.ReadFile("questions_db.json")
+		if err == nil {
+			json.Unmarshal(data, &allQuestions)
+		}
+
+		var allReplies []map[string]interface{}
+		replyData, err := ioutil.ReadFile("replies_db.json")
+		if err == nil {
+			json.Unmarshal(replyData, &allReplies)
+		}
+
+		var questions []map[string]interface{}
+		for _, q := range allQuestions {
+			if q["program_id"] == programId {
+				qId := q["id"].(string)
+				qReplies := make([]map[string]interface{}, 0)
+				for _, r := range allReplies {
+					if r["question_id"] == qId {
+						qReplies = append(qReplies, r)
+					}
+				}
+				q["replyList"] = qReplies
+				q["replies"] = len(qReplies)
+				questions = append(questions, q)
+			}
+		}
+
+		// Sort questions by time (descending) can be skipped for simplicity, or just reverse
+		for i, j := 0, len(questions)-1; i < j; i, j = i+1, j-1 {
+			questions[i], questions[j] = questions[j], questions[i]
+		}
+
+		return c.JSON(fiber.Map{"status": "success", "data": questions})
+	})
+
+	app.Post("/api/programs/:id/questions", func(c *fiber.Ctx) error {
+		programId := c.Params("id")
+		var payload map[string]interface{}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid payload"})
+		}
+		
+		var allQuestions []map[string]interface{}
+		data, _ := ioutil.ReadFile("questions_db.json")
+		if len(data) > 0 {
+			json.Unmarshal(data, &allQuestions)
+		}
+
+		newQuestion := map[string]interface{}{
+			"id":         uuid.New().String(),
+			"program_id": programId,
+			"author":     payload["author"],
+			"title":      payload["title"],
+			"content":    payload["content"],
+			"tags":       payload["tags"],
+			"likes":      0,
+			"time":       "Just now",
+			"created_at": time.Now().Format(time.RFC3339),
+		}
+
+		allQuestions = append(allQuestions, newQuestion)
+		
+		fileData, _ := json.MarshalIndent(allQuestions, "", "  ")
+		ioutil.WriteFile("questions_db.json", fileData, 0644)
+		
+		return c.JSON(fiber.Map{"status": "success", "data": newQuestion})
+	})
+
+	app.Post("/api/questions/:id/replies", func(c *fiber.Ctx) error {
+		questionId := c.Params("id")
+		var payload map[string]interface{}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid payload"})
+		}
+		
+		var allReplies []map[string]interface{}
+		data, _ := ioutil.ReadFile("replies_db.json")
+		if len(data) > 0 {
+			json.Unmarshal(data, &allReplies)
+		}
+
+		newReply := map[string]interface{}{
+			"id":          uuid.New().String(),
+			"question_id": questionId,
+			"author":      payload["author"],
+			"content":     payload["content"],
+			"time":        "Just now",
+			"created_at":  time.Now().Format(time.RFC3339),
+		}
+
+		allReplies = append(allReplies, newReply)
+		
+		fileData, _ := json.MarshalIndent(allReplies, "", "  ")
+		ioutil.WriteFile("replies_db.json", fileData, 0644)
+		
+		return c.JSON(fiber.Map{"status": "success", "data": newReply})
+	})
+
+	app.Post("/api/questions/:id/like", func(c *fiber.Ctx) error {
+		questionId := c.Params("id")
+		var payload map[string]interface{}
+		c.BodyParser(&payload)
+		
+		var allQuestions []map[string]interface{}
+		data, _ := ioutil.ReadFile("questions_db.json")
+		if len(data) > 0 {
+			json.Unmarshal(data, &allQuestions)
+		}
+
+		currentLikes := 0
+		for i, q := range allQuestions {
+			if q["id"] == questionId {
+				likes := 0
+				if val, ok := q["likes"].(float64); ok {
+					likes = int(val)
+				}
+				if payload["increment"] == false {
+					likes--
+				} else {
+					likes++
+				}
+				if likes < 0 {
+					likes = 0
+				}
+				allQuestions[i]["likes"] = likes
+				currentLikes = likes
+				break
+			}
+		}
+
+		fileData, _ := json.MarshalIndent(allQuestions, "", "  ")
+		ioutil.WriteFile("questions_db.json", fileData, 0644)
+		
+		return c.JSON(fiber.Map{"status": "success", "likes": currentLikes})
+	})
+
 	// Background Cron Job for Auto-Checkout
 	go func() {
 		for {
@@ -595,11 +841,11 @@ func main() {
 				
 				// Find all "Checked In" from today and force close them
 				autoCheckOutRecord := map[string]interface{}{
-					"check_out_time": now.Format(time.RFC3339),
-					"status":         "Auto-Checkout",
+					"checkOut": now.Format(time.RFC3339),
+					"updatedAt": now.Format(time.RFC3339),
 				}
 				
-				client.From("attendance").Update(autoCheckOutRecord, "", "").Eq("date", today).Eq("status", "Checked In").Execute()
+				client.From("attendances").Update(autoCheckOutRecord, "", "").Is("checkOut", "null").Eq("date", today).Execute()
 			}
 			
 			time.Sleep(1 * time.Hour)

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: devplus-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SUPABASE_URL=https://vescjjkwgkmjhbsgbvvt.supabase.co
+      - SUPABASE_KEY=sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: devplus-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - EXPO_PUBLIC_API_URL=http://localhost:3000
+    depends_on:
+      - backend

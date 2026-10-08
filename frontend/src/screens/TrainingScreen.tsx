@@ -1,56 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, Image, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
-import { PlayCircle, CheckCircle, Upload, FileText } from 'lucide-react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import { StyleSheet, Text, View, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { FileText, ArrowLeft } from 'lucide-react-native';
 import { theme } from '../theme';
-import { AuthContext } from '../../App';
+import { supabase } from '../lib/supabase';
 
 interface TrainingProgram {
   id: string;
   title: string;
   description: string;
   progress: number;
-  image_url: string;
+  image_url?: string;
+  pdf_url?: string;
+  video_url?: string;
+  created_at?: string;
+  file_size?: string;
+  file_count?: number;
 }
 
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 export default function TrainingScreen() {
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const [programs, setPrograms] = useState<TrainingProgram[]>([]);
   const [loading, setLoading] = useState(true);
-  const { role } = React.useContext(AuthContext);
 
   useEffect(() => {
-    fetchTrainingPrograms();
-  }, []);
+    if (isFocused) {
+      fetchTrainingPrograms();
+    }
+  }, [isFocused]);
 
   const fetchTrainingPrograms = async () => {
     try {
-      const response = await fetch('http://192.168.2.28:3000/api/training');
-      const result = await response.json();
-      if (response.ok && result.data) {
-        setPrograms(result.data);
+      const { data, error } = await supabase.from('training_plans').select('*, training_plan_modules(*)');
+      if (data) {
+        const formatted = data.map((item: any) => {
+          const modules = item.training_plan_modules || [];
+          const files = modules.filter((m: any) => m.fileUrl != null);
+          const fileCount = files.length;
+          const sizeMB = fileCount > 0 ? (fileCount * 1.5).toFixed(1) + ' MB' : '0 MB';
+
+          return {
+            id: item.id,
+            title: item.title,
+            description: item.description || 'Core curriculum',
+            progress: 0,
+            created_at: item.createdAt,
+            file_size: sizeMB,
+            file_count: fileCount
+          };
+        });
+        setPrograms(formatted as TrainingProgram[]);
       }
     } catch (error) {
       console.error('Failed to fetch training programs', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleCreateProgram = () => {
-    navigation.navigate('CreateTraining' as never);
-  };
-
-  const renderProgressBar = (progress: number) => {
-    return (
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBarBackground}>
-          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-        </View>
-        <Text style={styles.progressText}>{progress}%</Text>
-      </View>
-    );
   };
 
   if (loading) {
@@ -63,63 +69,61 @@ export default function TrainingScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <ArrowLeft color={theme.colors.surface} size={24} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Training Programs</Text>
+        <View style={{ width: 24 }} />
       </View>
-
-      {/* Mentor Action: Upload Plan */}
-      {role === 'Mentor' && (
-        <View style={styles.mentorActionContainer}>
-          <Text style={styles.mentorLabel}>Mentor Actions</Text>
-          <TouchableOpacity style={styles.uploadButton} onPress={handleCreateProgram}>
-            <Upload color={theme.colors.surface} size={20} />
-            <Text style={styles.uploadButtonText}>Create Training Program</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       <FlatList
         data={programs}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            {/* Try to load image, fallback to solid color if URL fails */}
-            <View style={styles.imagePlaceholder}>
-              <Image 
-                source={{ uri: item.image_url }} 
-                style={styles.cardImage} 
-                resizeMode="cover"
-                defaultSource={require('../../assets/icon.png')}
-              />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardDescription}>{item.description}</Text>
-              
-              {renderProgressBar(item.progress)}
+        renderItem={({ item }) => {
+          const fileCount = item.file_count || 0;
+          const uploadDate = item.created_at ? new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '25 Jun 2026';
+          const fileSize = item.file_size || '0 MB';
 
-              <TouchableOpacity 
-                style={[styles.actionButton, item.progress === 100 && styles.actionButtonCompleted]}
-                onPress={() => navigation.navigate('CourseDetail' as never, { course: item } as never)}
-              >
-                {item.progress === 100 ? (
-                  <>
-                    <CheckCircle color={theme.colors.success} size={18} />
-                    <Text style={[styles.actionButtonText, { color: theme.colors.success }]}>Completed</Text>
-                  </>
-                ) : (
-                  <>
-                    <PlayCircle color={theme.colors.surface} size={18} />
-                    <Text style={styles.actionButtonText}>Continue Learning</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          return (
+            <TouchableOpacity 
+              style={styles.card}
+              onPress={() => (navigation.navigate as any)('CourseDetail', { course: item })}
+            >
+              <View style={styles.cardContent}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.iconContainer}>
+                    <FileText color={theme.colors.primary} size={24} />
+                  </View>
+                  <View style={styles.titleContainer}>
+                    <Text style={styles.cardTitle}>{item.title}</Text>
+                    <Text style={styles.cardDescription} numberOfLines={2}>{item.description}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Files</Text>
+                    <Text style={styles.statValue}>{fileCount} items</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Size</Text>
+                    <Text style={styles.statValue}>{fileSize}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Uploaded</Text>
+                    <Text style={styles.statValue}>{uploadDate}</Text>
+                  </View>
+                </View>
+
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
@@ -138,10 +142,16 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingTop: 60,
     paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     ...theme.shadows.medium,
+  },
+  backButton: {
+    padding: 5,
   },
   headerTitle: {
     fontFamily: theme.typography.fontFamilyBold,
@@ -152,106 +162,76 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 0,
   },
-  mentorActionContainer: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  mentorLabel: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 16,
-    color: theme.colors.text,
-    marginBottom: 10,
-  },
-  uploadButton: {
-    backgroundColor: theme.colors.primary, // Changed from secondary for better contrast
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: theme.borderRadius.md,
-    ...theme.shadows.subtle,
-  },
-  uploadButtonText: {
-    fontFamily: theme.typography.fontFamilyBold,
-    fontSize: 14,
-    color: theme.colors.surface,
-    marginLeft: 8,
-  },
   card: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    marginBottom: 20,
-    overflow: 'hidden',
-    ...theme.shadows.medium,
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: 150,
-    backgroundColor: 'rgba(255, 140, 0, 0.2)', // Orange tint
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardImage: {
-    width: '100%',
-    height: '100%',
+    borderRadius: 16,
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   cardContent: {
     padding: 20,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  titleContainer: {
+    flex: 1,
   },
   cardTitle: {
     fontFamily: theme.typography.fontFamilyBold,
     fontSize: 18,
     color: theme.colors.text,
-    marginBottom: 5,
+    marginBottom: 6,
   },
   cardDescription: {
     fontFamily: theme.typography.fontFamily,
     fontSize: 14,
     color: theme.colors.textSecondary,
-    marginBottom: 15,
+    lineHeight: 20,
   },
-  progressContainer: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.background,
+    padding: 16,
+    borderRadius: 12,
   },
-  progressBarBackground: {
+  statItem: {
     flex: 1,
-    height: 8,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
     backgroundColor: theme.colors.border,
-    borderRadius: 4,
-    marginRight: 10,
-    overflow: 'hidden',
   },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: theme.colors.primary,
-    borderRadius: 4,
-  },
-  progressText: {
-    fontFamily: theme.typography.fontFamilySemiBold,
+  statLabel: {
+    fontFamily: theme.typography.fontFamily,
     fontSize: 12,
     color: theme.colors.textSecondary,
-    width: 40,
-    textAlign: 'right',
+    marginBottom: 4,
   },
-  actionButton: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
-    borderRadius: theme.borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionButtonCompleted: {
-    backgroundColor: '#E8F5E9',
-    borderWidth: 1,
-    borderColor: '#C8E6C9',
-  },
-  actionButtonText: {
-    fontFamily: theme.typography.fontFamilyBold,
+  statValue: {
+    fontFamily: theme.typography.fontFamilySemiBold,
     fontSize: 14,
-    color: theme.colors.surface,
-    marginLeft: 8,
+    color: theme.colors.text,
   },
 });

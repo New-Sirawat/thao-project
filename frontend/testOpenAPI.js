@@ -1,0 +1,1 @@
+const https = require('https'); https.get('https://vescjjkwgkmjhbsgbvvt.supabase.co/rest/v1/?apikey=sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y', (res) => { let data = ''; res.on('data', d => data += d); res.on('end', () => console.log(JSON.parse(data).info)); });

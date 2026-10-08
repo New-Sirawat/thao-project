@@ -1,0 +1,34 @@
+[
+  {
+    "email": "nguyenvana@devplus.edu.vn",
+    "id": "1",
+    "isCheckedIn": true,
+    "name": "Nguyen Van A",
+    "phone": "098-123-4567",
+    "role": "Frontend Intern"
+  },
+  {
+    "email": "tranthib@devplus.edu.vn",
+    "id": "2",
+    "isCheckedIn": true,
+    "name": "Tran Thi B",
+    "phone": "091-234-5678",
+    "role": "Backend Intern"
+  },
+  {
+    "email": "levanc@devplus.edu.vn",
+    "id": "3",
+    "isCheckedIn": false,
+    "name": "Le Van C",
+    "phone": "090-345-6789",
+    "role": "UI/UX Intern"
+  },
+  {
+    "email": "phamd@devplus.edu.vn",
+    "id": "4",
+    "isCheckedIn": false,
+    "name": "Pham D",
+    "phone": "093-456-7890",
+    "role": "Mobile Intern"
+  }
+]

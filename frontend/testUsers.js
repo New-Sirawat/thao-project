@@ -1,0 +1,1 @@
+const { createClient } = require('@supabase/supabase-js'); async function run() { const res = await fetch('https://vescjjkwgkmjhbsgbvvt.supabase.co/rest/v1/users?limit=5', { headers: { apikey: 'sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y' } }); const json = await res.json(); console.log(json); } run();

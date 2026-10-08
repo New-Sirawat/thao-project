@@ -1,0 +1,1 @@
+const { createClient } = require('@supabase/supabase-js'); async function run() { const supabase = createClient('https://vescjjkwgkmjhbsgbvvt.supabase.co', 'sb_publishable_b8XTCsANXZ6VAzy4pICO6Q__XsIpI5Y'); const { data, error } = await supabase.rpc('get_tables'); console.log(data || error); } run();

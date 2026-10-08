@@ -1,9 +1,11 @@
 import React from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity } from 'react-native';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { ArrowLeft, Clock, MapPin, Calendar as CalendarIcon, Plus } from 'lucide-react-native';
+import { ArrowLeft, Clock, MapPin, Plus, Calendar as CalendarIcon, Trash2, Edit2 } from 'lucide-react-native';
+import { Calendar } from 'react-native-calendars';
 import { theme } from '../theme';
 import { AuthContext } from '../../App';
+import { supabase } from '../lib/supabase';
 
 interface ScheduleItem {
   id: string;
@@ -11,52 +13,17 @@ interface ScheduleItem {
   time: string;
   location: string;
   type: 'Meeting' | 'Workshop' | 'Focus';
+  date?: string;
 }
 
-const mockSchedule: ScheduleItem[] = [
-  {
-    id: '1',
-    title: 'Daily Standup',
-    time: '09:00 AM - 09:30 AM',
-    location: 'Meeting Room 1 / Meet',
-    type: 'Meeting',
-  },
-  {
-    id: '2',
-    title: 'React Native Workshop',
-    time: '10:00 AM - 11:30 AM',
-    location: 'Training Room A',
-    type: 'Workshop',
-  },
-  {
-    id: '3',
-    title: 'Lunch Break',
-    time: '12:00 PM - 01:00 PM',
-    location: 'Cafeteria',
-    type: 'Focus',
-  },
-  {
-    id: '4',
-    title: 'Project Demo Prep',
-    time: '03:00 PM - 04:00 PM',
-    location: 'Desk',
-    type: 'Focus',
-  },
-  {
-    id: '5',
-    title: '1:1 Sync with Mentor',
-    time: '04:30 PM - 05:00 PM',
-    location: 'Meeting Room 2',
-    type: 'Meeting',
-  }
-];
-
 export default function ScheduleScreen() {
+
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const { role } = React.useContext(AuthContext);
+  // Removed unused role destructuring
   const [schedules, setSchedules] = React.useState<ScheduleItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [selectedDate, setSelectedDate] = React.useState('2026-06-24');
 
   React.useEffect(() => {
     if (isFocused) {
@@ -66,10 +33,25 @@ export default function ScheduleScreen() {
 
   const fetchSchedules = async () => {
     try {
-      const response = await fetch('http://192.168.2.28:3000/api/schedules');
-      const result = await response.json();
-      if (response.ok && result.data) {
-        setSchedules(result.data);
+      const { data, error } = await supabase
+        .from('training_plan_modules')
+        .select('*')
+        .order('dueDate', { ascending: true });
+        
+      if (data) {
+        const formatted = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          time: '11:59 PM',
+          location: 'Online Module',
+          type: 'Workshop',
+          date: item.dueDate ? item.dueDate.split('T')[0] : new Date().toISOString().split('T')[0]
+        }));
+        setSchedules(formatted as ScheduleItem[]);
+        
+        if (formatted.length > 0) {
+          setSelectedDate(formatted[0].date);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch schedules', error);
@@ -87,6 +69,31 @@ export default function ScheduleScreen() {
     }
   };
 
+  const activeSchedules = schedules;
+  const filteredEvents = activeSchedules.filter(event => {
+    const eventDate = event.date || '2026-06-24';
+    return eventDate === selectedDate;
+  });
+
+  const formattedDate = new Date(selectedDate).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  const markedDatesObj: any = {};
+  activeSchedules.forEach(event => {
+    const d = event.date || '2026-06-24';
+    markedDatesObj[d] = { marked: true, dotColor: theme.colors.primary };
+  });
+
+  if (markedDatesObj[selectedDate]) {
+    markedDatesObj[selectedDate].selected = true;
+    markedDatesObj[selectedDate].selectedColor = theme.colors.primary;
+  } else {
+    markedDatesObj[selectedDate] = { selected: true, selectedColor: theme.colors.primary };
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -97,19 +104,47 @@ export default function ScheduleScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={styles.calendarHeader}>
-        <CalendarIcon color={theme.colors.primary} size={24} />
-        <Text style={styles.dateText}>Today, 24 June 2026</Text>
+      <Calendar
+        style={styles.calendar}
+        theme={{
+          backgroundColor: '#ffffff',
+          calendarBackground: '#ffffff',
+          textSectionTitleColor: '#b6c1cd',
+          selectedDayBackgroundColor: theme.colors.primary,
+          selectedDayTextColor: '#ffffff',
+          todayTextColor: theme.colors.primary,
+          dayTextColor: '#2d4150',
+          textDisabledColor: '#d9e1e8',
+          arrowColor: theme.colors.primary,
+          monthTextColor: theme.colors.text,
+          textMonthFontFamily: theme.typography.fontFamilyBold,
+          textDayFontFamily: theme.typography.fontFamily,
+          textDayHeaderFontFamily: theme.typography.fontFamilySemiBold,
+        }}
+        onDayPress={(day: any) => {
+          setSelectedDate(day.dateString);
+        }}
+        markedDates={markedDatesObj}
+      />
+
+      <View style={styles.upcomingHeader}>
+        <Text style={styles.upcomingTitle}>Modules for {formattedDate}</Text>
       </View>
 
       <FlatList
-        data={schedules.length > 0 ? schedules : mockSchedule}
+        data={filteredEvents}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No modules scheduled for this day</Text>
+          </View>
+        }
         renderItem={({ item }) => (
           <View style={styles.timelineItem}>
             <View style={styles.timelineLeft}>
-              <Text style={styles.timelineTime}>{item.time.split(' - ')[0]}</Text>
+              <Text style={styles.timelineTime}>{item.time.split(' ')[0]}</Text>
+              <Text style={{ fontSize: 10, color: theme.colors.textSecondary, marginBottom: 5 }}>{item.time.split(' ')[1]}</Text>
               <View style={[styles.timelineLine, { backgroundColor: getTypeColor(item.type) }]} />
               <View style={[styles.timelineDot, { borderColor: getTypeColor(item.type) }]} />
             </View>
@@ -131,19 +166,12 @@ export default function ScheduleScreen() {
                 <MapPin color={theme.colors.textSecondary} size={14} />
                 <Text style={styles.detailText}>{item.location}</Text>
               </View>
+
             </TouchableOpacity>
           </View>
         )}
       />
 
-      {role === 'Mentor' && (
-        <TouchableOpacity 
-          style={styles.fab} 
-          onPress={() => navigation.navigate('CreateSchedule' as never)}
-        >
-          <Plus color={theme.colors.surface} size={24} />
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -153,6 +181,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontFamily: theme.typography.fontFamily,
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic',
+  },
   header: {
     backgroundColor: theme.colors.primary,
     paddingTop: 60,
@@ -161,12 +200,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
     ...theme.shadows.medium,
   },
   backButton: {
     padding: 5,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20
   },
   headerTitle: {
     fontFamily: theme.typography.fontFamilyBold,
@@ -213,14 +254,14 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     backgroundColor: theme.colors.surface,
     position: 'absolute',
-    top: 25,
+    top: 42,
     zIndex: 2,
   },
   timelineLine: {
     width: 2,
     flex: 1,
     position: 'absolute',
-    top: 30,
+    top: 48,
     bottom: -30,
     zIndex: 1,
   },
@@ -267,14 +308,33 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 20,
     right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...theme.shadows.medium,
   },
+  calendar: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 15,
+    marginTop: 15,
+    borderRadius: 20,
+    paddingBottom: 10,
+    paddingTop: 10,
+    ...theme.shadows.subtle,
+  },
+  upcomingHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 5,
+  },
+  upcomingTitle: {
+    fontFamily: theme.typography.fontFamilyBold,
+    fontSize: 18,
+    color: theme.colors.text,
+  }
 });

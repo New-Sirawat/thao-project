@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Image as ImageIcon, FileText, Video, Upload, CheckCircle } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { theme } from '../theme';
+import { API_BASE_URL } from '../lib/api';
 
 export default function CreateTrainingScreen() {
   const navigation = useNavigation();
@@ -70,12 +71,9 @@ export default function CreateTrainingScreen() {
         } as any);
       }
 
-      const response = await fetch('http://192.168.2.28:3000/api/training', {
+      const response = await fetch(`${API_BASE_URL}/api/training`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
       });
 
       if (!response.ok) {
