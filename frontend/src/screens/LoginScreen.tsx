@@ -28,7 +28,7 @@ export default function LoginScreen() {
       setErrorMsg('Please enter both email and password.');
       return;
     }
-    if (!validateEmail(email) && email !== 'test') {
+    if (!validateEmail(email) && email !== 'test' && email !== 'admin') {
       setEmailError('Incorrect email format.');
       return;
     }
@@ -49,6 +49,24 @@ export default function LoginScreen() {
           user_metadata: { name: 'Somchai Jaidee (Test Mode)' }
         },
         access_token: 'mock-token-' + Date.now()
+      };
+      await AsyncStorage.setItem('session', JSON.stringify(mockSession));
+      setSession(mockSession);
+      setLoading(false);
+      return;
+    }
+
+    if (email === 'admin' || email === 'admin@devplus.io') {
+      await AsyncStorage.removeItem('session');
+      const mockSession = {
+        user: {
+          id: 'b31e7bbe-a75a-4aeb-a6ca-b4d1d0777026',
+          email: 'admin@devplus.io',
+          name: 'Alex Morgan (Admin Mode)',
+          role: 'SUPER_ADMIN',
+          user_metadata: { name: 'Alex Morgan (Admin Mode)' }
+        },
+        access_token: 'mock-token-admin-' + Date.now()
       };
       await AsyncStorage.setItem('session', JSON.stringify(mockSession));
       setSession(mockSession);

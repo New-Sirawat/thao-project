@@ -14,7 +14,16 @@ This document provides test cases for validating the DevPlus Mobile App (Student
   4. Tap the "Sign In" button.
 - **Expected Result:** Successfully authenticated and redirected to HomeScreen, displaying the student name "Somchai Jaidee (Test Mode)".
 
-### Test Case 1.2: Logout
+### Test Case 1.2: Login as Admin (Developer Bypass)
+- **Use Case:** UC-1.1 (Admin Role)
+- **Steps:**
+  1. Open the application.
+  2. In the Email field, type `admin` (or `admin@devplus.io`).
+  3. In the Password field, enter `Password1234!` (or any password).
+  4. Tap the "Sign In" button.
+- **Expected Result:** Successfully authenticated with role `SUPER_ADMIN` and redirected to HomeScreen, displaying "Alex Morgan (Admin Mode)".
+
+### Test Case 1.3: Logout
 - **Use Case:** UC-1.2
 - **Steps:**
   1. Navigate to the "Profile" tab (far right).
